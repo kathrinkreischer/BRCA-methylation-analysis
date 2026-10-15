@@ -1,0 +1,144 @@
+---
+title: "Density Plots"
+author: "Antonia Eisenhofer"
+date: "2024-07-07"
+output: html_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+## Loading Data
+```{r}
+wd <- getwd()
+data_path <- paste0(dirname(wd), '/data/BRCA_methylation_data.csv')
+BRCA_methylation_data_original <- read.csv(data_path, row.names=1)
+```
+
+```{r}
+wd <- getwd()
+data_path <- paste0(dirname(wd), '/data/BRCA_sample_sheet.csv')
+BRCA_sample_sheet <- read.csv(data_path, row.names=1)
+```
+
+
+## Data Preparation
+
+I. Extraction of the "Type" column of the sample sheet
+```{r}
+BRCA_type_extracted <- BRCA_sample_sheet$Type
+BRCA_type_extracted
+```
+
+II. Conversion into vector
+```{r}
+BRCA_type_extracted_vector <- c(BRCA_type_extracted)
+is.vector(BRCA_type_extracted_vector)
+```
+
+III. Merge 
+```{r}
+BRCA_type_combined <- rbind(BRCA_methylation_data_original, BRCA_type_extracted_vector )
+```
+
+I. Extraction of the "Vital Status" column of the sample sheet
+```{r}
+BRCA_vital_extracted <- BRCA_sample_sheet$Vital.status
+BRCA_vital_extracted
+```
+
+II. Conversion into Vector 
+```{r}
+BRCA_vital_extracted_vector <- c(BRCA_vital_extracted)
+is.vector(BRCA_vital_extracted_vector)
+```
+
+III. Merge
+```{r}
+BRCA_methylation_type_vital <- rbind(BRCA_type_combined, BRCA_vital_extracted_vector ) 
+```
+
+# Partitioning patients into groups based on respective clinical parameters (Tumor Type) from the annotation dataframe
+
+```{r}
+type_primary <- which(BRCA_methylation_type_vital[426462, ] == "Primary solid Tumor")
+data_type_primary <- BRCA_methylation_type_vital[type_primary]
+dim(data_type_primary)
+```
+
+```{r}
+type_solid <- which(BRCA_methylation_type_vital[426462, ] == "Solid Tissue Normal")
+data_type_solid <- BRCA_methylation_type_vital[type_solid]
+dim(data_type_solid)
+```
+
+Removing additional rows from methylation Dataframe
+```{r}
+patient_primary_type <- head(data_type_primary, -2) # zusätzliche Zeilen wieder entfernen 
+patient_solid_type <- head(data_type_solid, -2)
+dim(patient_primary_type)
+dim(patient_solid_type)
+```
+
+Converting non-numeric values to numeric values
+```{r}
+print(class(patient_primary_type))
+patient_primary_type <- as.data.frame(sapply(patient_primary_type, as.numeric))
+str(patient_primary_type)
+print(class(patient_solid_type))
+patient_solid_type <- as.data.frame(sapply(patient_solid_type, as.numeric))
+str(patient_solid_type)
+```
+
+Creating Density Plots
+
+```{r}
+# create each column of dataframe into a vector using unlist function
+beta_werte_primary <- unlist(patient_primary_type)
+
+# create density function
+dichte_primary <- density(beta_werte_primary)
+
+# Plot density function
+plot(dichte_primary, main = "Density plot for primary solid Tumor ", xlab = "ß-Values", ylab = "Density", col='red')
+
+```
+
+```{r}
+# create each column of dataframe into a vector using unlist function
+beta_werte_solid <- unlist(patient_solid_type)
+
+# create density function
+dichte_solid <- density(beta_werte_solid)
+
+# Plot density function
+plot(dichte_solid, main = "Density plot for Solid Tissue Normal ", xlab = "ß-Values", ylab = "Density", col='blue')
+```
+
+Combining the two plots:
+```{r}
+library(ggplot2)
+
+
+dichte_primary <- density(beta_werte_primary)
+dichte_solid <- density(beta_werte_solid)
+
+# Erstellen des ggplot-Objekts
+plot_type <- ggplot() +
+  geom_line(data = data.frame(x = dichte_primary$x, y = dichte_primary$y), aes(x = x, y = y, color = "Primary solid Tumor"), size = 0.5) +
+  geom_line(data = data.frame(x = dichte_solid$x, y = dichte_solid$y), aes(x = x, y = y, color = "Solid Tissue Normal"), size = 0.5) +
+  labs(title = "Density plot for tumor type", x = "ß-Values", y = "Density") +
+  scale_color_manual(values = c("Primary solid Tumor" = "red", "Solid Tissue Normal" = "blue")) +
+  theme_minimal() +
+  theme(legend.position = "right")
+
+# Zeige den Plot an
+print(plot_type)
+
+# Speichere den Plot als PDF
+ggsave("Density_plots_Exploration.pdf", plot = plot_type, width = 10, height = 8)
+
+```
+
+

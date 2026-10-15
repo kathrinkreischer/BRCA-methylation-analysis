@@ -1,0 +1,58 @@
+---
+title: "Heatmap Data"
+output: pdf_document
+date: "2024-05-08"
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+```{r}
+wd <- getwd()
+data_path <- paste0(dirname(wd), '/data/BRCA_methylation_data.csv')
+BRCA_methylation_data_original <- read.csv(data_path, row.names=1)
+```
+
+```{r}
+wd <- getwd()
+data_path <- paste0(dirname(wd), '/data/BRCA_sample_sheet.csv')
+BRCA_sample_sheet <- read.csv(data_path, row.names=1)
+```
+
+
+```{r}
+#identische Bennung der Patient-ID  Bindestrich
+colnames(BRCA_methylation_data_original) <- gsub("\\.", "-", colnames(BRCA_methylation_data_original))
+```
+
+```{r}
+#Subset des Annotation Dataframes mit dem Type
+#drop=FALSE behält die Dimensionen
+tissue_types <- BRCA_sample_sheet[,7, drop=FALSE]
+```
+
+
+```{r}
+#Library pheatmap laden und brewer.pal
+library(pheatmap)
+library(RColorBrewer)
+
+pdf("Heatmap_methylation_data.pdf")
+
+#Farbgebung für tumour tissue rot und für solid tissue blau
+annotation_color <- list(Type=c(`Primary solid Tumor`='red', `Solid Tissue Normal` = 'blue'))
+
+#Heatmap der Korrelation, geclustered mit complete linkage, Annotationen zum tissue Type
+Heatmap_methyaltion_data <- pheatmap(BRCA_methylation_data_original, 
+         show_rownames = FALSE, 
+         show_colnames = FALSE,
+         cluster_rows = FALSE,
+         annotation_col = tissue_types, 
+         annotation_colors=annotation_color,
+         color=colorRampPalette(brewer.pal(n = 7, name ="Greens"))(100))
+dev.off()
+print(Heatmap_methyaltion_data)
+```
+
+

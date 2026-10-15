@@ -1,0 +1,56 @@
+---
+title: "Correlation"
+output: pdf_document
+date: "2024-05-01"
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+```{r}
+wd <- getwd()
+data_path <- paste0(dirname(wd), '/data/BRCA_methylation_data.csv')
+BRCA_methylation_data_original <- read.csv(data_path, row.names=1)
+```
+
+```{r}
+wd <- getwd()
+data_path <- paste0(dirname(wd), '/data/BRCA_sample_sheet.csv')
+BRCA_sample_sheet <- read.csv(data_path, row.names=1)
+```
+
+
+```{r}
+#identische Bennung der Patient-ID  Bindestrich
+colnames(BRCA_methylation_data_original) <- gsub("\\.", "-", colnames(BRCA_methylation_data_original))
+```
+
+```{r}
+#Subset des Annotation Dataframes mit dem Type
+#drop=FALSE behält die Dimensionen
+tissue_types <- BRCA_sample_sheet[,7, drop=FALSE]
+```
+
+
+```{r}
+#Library pheatmap laden
+library(pheatmap)
+
+#Pearson-Korrelation zwischen den Patienten ausrechnen
+patient_correlation_each_with_everyone <- cor(BRCA_methylation_data_original)
+
+#Farbgebung für tumour tissue rot und für solid tissue blau
+annotation_color <- list(Type=c(`Primary solid Tumor`='red', `Solid Tissue Normal` = 'blue'))
+
+#Heatmap der Korrelation, geclustered mit complete linkage, Annotationen zum tissue Type
+pheatmap(patient_correlation_each_with_everyone, 
+         show_rownames = FALSE, 
+         show_colnames = FALSE, 
+         annotation_col = tissue_types, 
+         annotation_row = tissue_types, 
+         annotation_colors=annotation_color, 
+         color=rev(heat.colors(100)))
+```
+
+

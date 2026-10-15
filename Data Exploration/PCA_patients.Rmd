@@ -1,0 +1,104 @@
+---
+title: "PCA_patients"
+author: "Antonia Eisenhofer"
+date: "2024-07-03"
+output: html_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+```{r}
+wd <- getwd()
+data_path <- paste0(dirname(wd), '/data/BRCA_methylation_data.csv')
+BRCA_methylation_data_original <- read.csv(data_path, row.names=1)
+
+```
+
+```{r}
+wd <- getwd()
+data_path <- paste0(dirname(wd), '/data/BRCA_sample_sheet.csv')
+BRCA_sample_sheet <- read.csv(data_path, row.names=1)
+```
+
+```{r}
+head(BRCA_sample_sheet)
+```
+
+```{r}
+pca_daten <- prcomp(t(BRCA_methylation_data_original))
+```
+
+```{r}
+pca_daten$sdev
+variance_pca_BRCA_methylation_data = (pca_daten$sdev)^2
+prop.variance_pca_BRCA_methylation_data = variance_pca_BRCA_methylation_data/sum(variance_pca_BRCA_methylation_data)
+names(prop.variance_pca_BRCA_methylation_data) = 1:length(prop.variance_pca_BRCA_methylation_data)
+
+
+proportion_of_variance <- barplot(prop.variance_pca_BRCA_methylation_data[1:50], 
+        ylim = c(0, 0.3), # Anpassung der Y-Achse 
+        ylab = 'Proportion of variance', 
+        xlab = 'Principal components')
+
+```
+
+
+```{r}
+BRCA_sample_sheet$Type <- as.factor(BRCA_sample_sheet$Type) #Klassifizierungen als Faktor ausgeben, damit diese später angefärbt werden können
+color = c('red','blue') #Farben auswählen
+cb = color[BRCA_sample_sheet$Type] #Farben den Klassifizierungen zuordnen
+pdf("PCA_patients.pdf")
+PCA_patients <- plot(pca_daten$x[,1], pca_daten$x[,2], xlab='PC1',ylab='PC2', col=cb, pch = 19)
+unique_types <- unique(BRCA_sample_sheet$Type)
+legend("bottomleft", legend = unique_types, pch = 19, col=color)
+dev.off()
+```
+
+### Scree mit dem Base-R-Packet
+
+```{r}
+screeplot(pca_daten,
+          type='lines',
+          main='Scree Plot')
+```
+
+```{r}
+eigenvalues <- pca_daten$sdev^2
+kaizer_criterium <-sum(eigenvalues>1)
+kaizer_criterium
+```
+
+```{r}
+cumulative_variance <- cumsum(eigenvalues) / sum(eigenvalues)
+
+# Anzahl der Komponenten, die mindestens 90% der Varianz erklären
+num_components_90 <- sum(cumulative_variance >= 0.90)
+num_components_90
+```
+
+### Screeplot mit dem factoextra-Packet
+
+```{r}
+#install.packages('factoextra')
+library(factoextra)
+library(ggplot2)
+```
+
+```{r}
+pdf("Screeplot_PCA_patients.pdf")
+Screeplot_PCA_patients <- fviz_eig(pca_daten,
+         addlabels=TRUE,
+         ylim=c(0,50))
+dev.off()
+print(Screeplot_PCA_patients)
+```
+
+
+
+
+
+
+
+

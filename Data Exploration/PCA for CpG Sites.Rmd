@@ -1,0 +1,172 @@
+---
+title: "PCA for CpG sites"
+author: "Antonia Eisenhofer"
+date: "2024-05-26"
+output: html_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+## Loading Data
+```{r}
+wd <- getwd()
+data_path <- paste0(dirname(wd), '/data/BRCA_methylation_data.csv')
+BRCA_methylation_data_original <- read.csv(data_path, row.names=1)
+```
+
+```{r}
+wd <- getwd()
+data_path <- paste0(dirname(wd), '/data/BRCA_sample_sheet.csv')
+BRCA_sample_sheet <- read.csv(data_path, row.names=1)
+```
+
+## Data Preparation
+
+I. Extraction of the "Type" column of the sample sheet
+```{r}
+BRCA_type_extracted <- BRCA_sample_sheet$Type
+BRCA_type_extracted
+```
+
+II. Conversion into vector
+```{r}
+BRCA_type_extracted_vector <- c(BRCA_type_extracted)
+is.vector(BRCA_type_extracted_vector)
+```
+
+III. Merge 
+```{r}
+BRCA_type_combined <- rbind(BRCA_methylation_data_original, BRCA_type_extracted_vector )
+```
+
+I. Extraction of the "Vital Status" column of the sample sheet
+```{r}
+BRCA_vital_extracted <- BRCA_sample_sheet$Vital.status
+BRCA_vital_extracted
+```
+
+II. Conversion into Vector 
+```{r}
+BRCA_vital_extracted_vector <- c(BRCA_vital_extracted)
+is.vector(BRCA_vital_extracted_vector)
+```
+
+III. Merge
+```{r}
+BRCA_methylation_type_vital <- rbind(BRCA_type_combined, BRCA_vital_extracted_vector ) 
+```
+
+# Partitioning patients into groups based on respective clinical parameters (Tumor Type) from the annotation dataframe
+
+```{r}
+type_primary <- which(BRCA_methylation_type_vital[426462, ] == "Primary solid Tumor")
+data_type_primary <- BRCA_methylation_type_vital[type_primary]
+dim(data_type_primary)
+```
+
+```{r}
+type_solid <- which(BRCA_methylation_type_vital[426462, ] == "Solid Tissue Normal")
+data_type_solid <- BRCA_methylation_type_vital[type_solid]
+dim(data_type_solid)
+```
+
+Removing additional rows from methylation Dataframe
+```{r}
+patient_primary_type <- head(data_type_primary, -2) # zusätzliche Zeilen wieder entfernen 
+patient_solid_type <- head(data_type_solid, -2)
+dim(patient_primary_type)
+dim(patient_solid_type)
+```
+
+Converting non-numeric values to numeric values
+```{r}
+print(class(patient_primary_type))
+patient_primary_type <- as.data.frame(sapply(patient_primary_type, as.numeric))
+str(patient_primary_type)
+print(class(patient_solid_type))
+patient_solid_type <- as.data.frame(sapply(patient_solid_type, as.numeric))
+str(patient_solid_type)
+```
+
+```{r}
+#identische Bennung der Patient-ID  Bindestrich
+colnames(BRCA_methylation_data_original) <- gsub("\\.", "-", colnames(BRCA_methylation_data_original))
+```
+
+
+```{r}
+#Subset des Annotation Dataframes mit dem Type
+#drop=FALSE behält die Dimensionen
+tissue_types <- BRCA_sample_sheet[,7, drop=FALSE]
+```
+
+
+
+### Principle component Analysis for the CpG Sites 
+## with ggplot2 package
+```{r}
+library(ggplot2)
+library(factoextra)
+
+PCA_CpG_result <- prcomp(BRCA_methylation_data_original, scale. = TRUE)
+
+# Summary of the PCA results
+summary(PCA_CpG_result)
+
+# Eigenvalues and Scree Plot
+pdf("Screeplot_PCA_CpGs.pdf")
+fviz_eig(PCA_CpG_result)
+dev.off()
+
+# Converting Results into Dataframe
+PCA_CpG_dataframe <- as.data.frame(PCA_CpG_result$x)
+```
+
+```{r}
+# Plotting the PCA Results in a Biplot
+plot <- ggplot(PCA_CpG_dataframe, aes(x = PC1, y = PC2)) +
+  geom_point(size = 1) + 
+  labs(title = "PCA for CpG sites", x = "Principal Component 1", y = "Principal Component 2") +
+  coord_fixed(ratio = 1) +
+  theme_minimal()
+print(plot)
+
+```
+
+## without ggplot2 package
+```{r}
+PCA_CpG_daten <- prcomp(BRCA_methylation_data_original)
+```
+
+```{r}
+PCA_CpG_daten$sdev
+variance_PCA_CpG = (PCA_CpG_daten$sdev)^2
+prop.variance_PCA_CpG = variance_PCA_CpG/sum(variance_PCA_CpG)
+names(prop.variance_PCA_CpG) = 1:length(prop.variance_PCA_CpG)
+
+
+proportion_of_variance_PCA_CpG <- barplot(prop.variance_PCA_CpG[1:50], 
+        ylim = c(0, 1), # Adjustment of the y-Axis  
+        ylab = 'Proportion of variance', 
+        xlab = 'Principal components')
+
+```
+
+```{r}
+pdf("PCA_CpG_plot.pdf", width = 7, height = 7)
+# Creating a plot window with  ratio 1:1, so that the plot ends up being square
+par(pty = "s") 
+
+# Creating the PCA biplot
+PCA_CpG <- plot(PCA_CpG_daten$x[,1], PCA_CpG_daten$x[,2], 
+            xlab='PC1', ylab='PC2', pch = 19, cex = 0.2)
+dev.off()
+PCA_CpG
+```
+
+
+
+
+
