@@ -1,0 +1,119 @@
+---
+title: "Untitled"
+output: pdf_document
+date: "2024-05-03"
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+```{r}
+wd <- getwd()
+data_path <- paste0(dirname(wd), '/data/BRCA_methylation_data.csv')
+BRCA_methylation_data_original <- read.csv(data_path, row.names=1)
+```
+
+```{r}
+wd <- getwd()
+data_path <- paste0(dirname(wd), '/data/BRCA_sample_sheet.csv')
+BRCA_sample_sheet <- read.csv(data_path, row.names=1)
+```
+
+```{r}
+#identische Bennung der Patient-ID  Bindestrich
+colnames(BRCA_methylation_data_original) <- gsub("\\.", "-", colnames(BRCA_methylation_data_original))
+```
+
+# Subgroups
+
+## Type
+
+### Cancer patients
+
+```{r}
+# in Faktor umwandeln
+as.factor(BRCA_sample_sheet$Type) 
+
+# die Patienten aus dem Datenset auswählen, die dem Type Primary solid Tumor zugeordnet werden
+tumor_patients <- BRCA_methylation_data_original[,BRCA_sample_sheet$Type == 'Primary solid Tumor'] 
+tumor_patients
+```
+
+### Healthy patients
+
+```{r}
+# die Patienten aus dem Datenset auswählen, die dem Type Solid Tissue Normal zugeordnet werden
+healthy_patients <- BRCA_methylation_data_original[,BRCA_sample_sheet$Type == 'Solid Tissue Normal'] 
+healthy_patients
+```
+
+## Vital status
+
+### Deceased
+
+```{r}
+# Umwandlung in Faktor
+as.factor(BRCA_sample_sheet$Vital.status)
+
+# welche Patienten(Reihen im sample_sheet) haben keinen Vital status
+rmv.row_wo_vital_status <- which(is.na(BRCA_sample_sheet$Vital.status))
+
+# Entfernung dieser Patienten aus dem annotierten Datensatz
+BRCA_sample_sheet_wo_vital_status <- BRCA_sample_sheet[-rmv.row_wo_vital_status,]
+
+# Auswählen dieser der deceased patients aus dem Datensatz
+deceased_patients <- BRCA_methylation_data_original_wo_vital_status[,BRCA_sample_sheet_wo_vital_status$Vital.status == 'DECEASED']
+deceased_patients
+```
+
+### Living
+
+```{r}
+# Auswählen dieser der living patients aus dem Datensatz
+living_patients <- BRCA_methylation_data_original_wo_vital_status[,BRCA_sample_sheet_wo_vital_status$Vital.status == 'LIVING']
+living_patients
+```
+
+## Gender
+
+### Female
+
+```{r}
+#Umwandlung in Faktor
+as.factor(BRCA_sample_sheet$Gender)
+
+#welche Patienten(Reihen im sample_sheet) haben keinen Gender zugeordnet
+rmv.row_wo_gender <- which(is.na(BRCA_sample_sheet$Gender))
+
+#Entfernung dieser Patienten aus dem Datensatz
+BRCA_sample_sheet_wo_gender <- BRCA_sample_sheet[-rmv.row_wo_gender,]
+
+#Auswählen der female Patients aus dem Datensatz
+female_patients <- BRCA_methylation_data_original[,BRCA_sample_sheet_wo_gender$Gender == 'FEMALE']
+female_patients
+```
+
+### Male
+
+```{r}
+male_patient <- BRCA_methylation_data_original[,BRCA_sample_sheet_wo_gender$Gender == 'MALE',drop=FALSE]
+male_patient
+```
+
+## Significant CpGs
+
+```{r}
+#laden der DMP csv Datei (die ersten 10.000)
+wd <- getwd()
+data_path <- paste0(wd, '/data/DMPs_10.000.csv')
+DMPs_10.000 <- read.csv(data_path, row.names=1)
+```
+
+Für das Auswählen von weniger CpGs einfach
+
+```{r}
+#DMPs_n <- DMPs_10.000[1:n,]
+```
+
+*n* ist die Anzahl der CpGs, die man auswählen möchte
