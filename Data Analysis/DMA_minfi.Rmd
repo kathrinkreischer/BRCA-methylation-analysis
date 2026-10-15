@@ -1,0 +1,108 @@
+---
+title: "dmpFinder"
+author: "Antonia Eisenhofer"
+date: "2024-06-09"
+output: html_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+```{r}
+wd <- getwd()
+data_path <- paste0(dirname(wd), '/data/BRCA_methylation_data.csv')
+BRCA_methylation_data_original <- read.csv(data_path, row.names=1)
+```
+
+```{r}
+wd <- getwd()
+data_path <- paste0(dirname(wd), '/data/BRCA_sample_sheet.csv')
+BRCA_sample_sheet <- read.csv(data_path, row.names=1)
+```
+
+```{r}
+#identische Bennung der Patient-ID  Bindestrich
+colnames(BRCA_methylation_data_original) <- gsub("\\.", "-", colnames(BRCA_methylation_data_original))
+```
+
+
+```{r}
+# Load necessary libraries
+library(minfi)
+library(IlluminaHumanMethylation450kanno.ilmn12.hg19)
+```
+
+```{r}
+#  Extract Tumor Type 
+Tumor_Type <- BRCA_sample_sheet$Type
+sample_ids <- BRCA_sample_sheet$TCGA.ID # Extract  Patient ID 
+methylation_data_dmp <- BRCA_methylation_data_original[, sample_ids] #assign the methylation data to the extracted patient IDs
+methylation_data_dmp <- as.matrix(methylation_data_dmp)
+```
+
+```{r}
+# Create a phenodata object
+pheno_data <- data.frame(phenotype = Tumor_Type)
+rownames(pheno_data) <- sample_ids
+
+# Run dmpFinder
+dmps <- dmpFinder(methylation_data_dmp, pheno = pheno_data$phenotype, type = "categorical")
+
+```
+
+
+```{r}
+# load Annotation for 450k-Chips 
+ann450k <- getAnnotation(IlluminaHumanMethylation450kanno.ilmn12.hg19)
+
+# apply dmp 
+dmps <- dmpFinder(methylation_data_dmp, pheno = pheno_data$phenotype, type = "categorical")
+
+# Extract methylation positions from the results
+meth_positions <- rownames(dmps)
+
+# Select annotations for the methylation positions
+matched_ann <- ann450k[match(meth_positions, ann450k$Name), ]
+
+# Combining results wirh the annotation
+dmps_with_ann <- cbind(dmps, matched_ann)
+```
+
+Converting the results in a CSV: 
+```{r}
+dmps_with_ann_df <- as.data.frame(dmps_with_ann)
+write.csv(dmps_with_ann_df, "dmpFinder_Results.csv", row.names = FALSE)
+```
+
+
+# Creating Subgroups 
+```{r}
+methylation_data <- BRCA_methylation_data_original
+methylation_data <- as.matrix(methylation_data)
+```
+
+Top 1000 CpG: 
+```{r}
+dmps_with_ann_subset_1000 <- head(dmps_with_ann, 1000)
+Top_1000_CpG_names <- rownames(dmps_with_ann_subset_1000)
+methylation_data_Top_1000 <- methylation_data[Top_1000_CpG_names, ]
+methylation_data_Top_1000_df <- as.data.frame(methylation_data_Top_1000)
+write.csv(methylation_data_Top_1000_df, "Top_1000_dmps.csv", row.names = FALSE)
+```
+
+Top 5000 CpG: 
+```{r}
+dmps_with_ann_subset_5000 <- head(dmps_with_ann, 5000)
+Top_5000_CpG_names <- rownames(dmps_with_ann_subset_5000)
+methylation_data_Top_5000 <- methylation_data[Top_5000_CpG_names, ]
+methylation_data_Top_5000_df <- as.data.frame(methylation_data_Top_5000)
+write.csv(methylation_data_Top_5000_df, "Top_5000_dmps.csv", row.names = FALSE)
+```
+
+
+
+
+
+
+

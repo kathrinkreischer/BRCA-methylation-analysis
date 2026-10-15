@@ -1,0 +1,177 @@
+---
+title: "Untitled"
+output: pdf_document
+date: "2024-06-24"
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+```{r}
+wd <- getwd()
+data_path <- paste0(dirname(wd), '/data/BRCA_methylation_data.csv')
+BRCA_methylation_data_original <- read.csv(data_path, row.names=1)
+```
+
+```{r}
+wd <- getwd()
+data_path <- paste0(dirname(wd), '/data/BRCA_sample_sheet.csv')
+BRCA_sample_sheet <- read.csv(data_path, row.names=1)
+```
+
+```{r}
+wd <- getwd()
+data_path <- paste0(dirname(wd), '/data/DMPs.csv')
+DMPs <- read.csv(data_path, row.names=1)
+```
+
+
+```{r}
+wd <- getwd()
+data_path <- paste0(dirname(wd), '/data/DMA_model_matrix.csv')
+design <- read.csv(data_path, row.names=1)
+```
+
+```{r}
+wd <- getwd()
+data_path <- paste0(dirname(wd), '/data/DMA_contrast_matrix.csv')
+contrast_matrix <- read.csv(data_path, row.names=1)
+```
+
+# Packages laden
+```{r}
+library(knitr)
+library(limma)
+library(minfi)
+library(IlluminaHumanMethylation450kanno.ilmn12.hg19)
+library(IlluminaHumanMethylation450kmanifest)
+library(RColorBrewer)
+library(missMethyl)
+library(minfiData)
+library(Gviz)
+library(DMRcate)
+library(stringr)
+```
+Signifikante CpGs auswählen
+```{r}
+significant_CpGs <- DMPs[DMPs$adj.P.Val < 0.05, ] #jetzt sind es 160587 Signifikante CpGs
+```
+und aus dem Datensatz rausfiltern
+```{r}
+DMR_data_sig <- BRCA_methylation_data_original[rownames(BRCA_methylation_data_original) %in% rownames(significant_CpGs),]
+DMR_data_matrix_sig <- as.matrix(BRCA_methylation_data_original[rownames(BRCA_methylation_data_original) %in% rownames(significant_CpGs),])
+```
+# DMR-Analyse
+```{r}
+myAnnotation_sig <- cpg.annotate(object = DMR_data_matrix_sig,
+                             datatype = "array",
+                             what = "Beta", 
+                             analysis.type = "differential",
+                             design = design, 
+                             contrasts = TRUE,
+                             cont.matrix = contrast_matrix, 
+                             coef = "Primary.solid.Tumor - Solid.Tissue.Normal",
+                             arraytype = "450K")
+```
+
+```{r}
+sig_DMRs <- dmrcate(myAnnotation_sig, lambda=1000, C=2)
+results.ranges.sig <- extractRanges(sig_DMRs)
+results.ranges.sig
+```
+Als csv datei speichern`
+```{r}
+# Konvertieren in DataFrame
+df <- as.data.frame(results.ranges.sig)
+
+# Speichern als CSV
+write.csv(df, file = "DMRs_160587_sig_CpGs.csv", row.names = FALSE)
+```
+
+
+```{r}
+# set up the grouping variables and colours
+groups <- c("red", "blue")
+names(groups) <- levels(factor(BRCA_sample_sheet$Type))
+cols <- groups[as.character(factor(BRCA_sample_sheet$Type))]
+```
+
+```{r}
+# draw the plot for the top DMR
+#par(mfrow=c(1,1))
+DMR_plot_sig <- DMR.plot(ranges = results.ranges.sig,
+         dmr = 2,
+         CpGs = DMR_data_matrix_sig,
+         phen.col = cols, 
+         what = "Beta",
+         arraytype = "450K",
+         genome = "hg19",)
+```
+
+```{r}
+# indicate which genome is being used
+gen_sig <- "hg19"
+# the index of the DMR that we will plot 
+dmrIndex_sig <- 1
+# extract chromosome number and location from DMR results 
+chrom_sig <- as.character(seqnames(results.ranges.sig[dmrIndex]))
+start_sig <- as.numeric(start(results.ranges.sig[dmrIndex]))
+end_sig <- as.numeric(end(results.ranges.sig[dmrIndex]))
+# add 25% extra space to plot
+minbase_sig <- start_sig - (0.25*(end_sig-start_sig))
+maxbase_sig <- end_sig + (0.25*(end_sig-start_sig))
+```
+
+```{r}
+iTrack_sig <- IdeogramTrack(genome = gen_sig, chromosome = chrom_sig, name="")
+gTrack_sig <- GenomeAxisTrack(col="black", cex=1, name="", fontcolor="black")
+rTrack_sig <- UcscTrack(genome=gen_sig, chromosome=chrom_sig, track="NCBI RefSeq", 
+                    from=minbase_sig, to=maxbase_sig, trackType="GeneRegionTrack", 
+                    rstarts="exonStarts", rends="exonEnds", gene="name", 
+                    symbol="name2", transcript="name", strand="strand", 
+                    fill="darkblue",stacking="squish", name="RefSeq", 
+                    showId=TRUE, geneSymbol=TRUE)
+```
+
+```{r}
+ann450kOrd <- ann450kSub[order(ann450kSub$chr,ann450kSub$pos),]
+head(ann450kOrd)
+```
+
+```{r}
+DMR_dataOrd_sig <- DMR_data_sig[match(ann450kOrd$Name,rownames(DMR_data_sig)),]
+head(DMR_dataOrd_sig)
+```
+
+```{r}
+# create genomic ranges object from methylation data
+cpgData_sig <- GRanges(seqnames=Rle(ann450kOrd$chr),
+                   ranges=IRanges(start=ann450kOrd$pos, end=ann450kOrd$pos),
+                   strand=Rle(rep("*",nrow(ann450kOrd))),
+                   betas=DMR_dataOrd_sig)
+```
+
+```{r}
+# extract data on CpGs in DMR
+cpgData_sig <- subsetByOverlaps(cpgData_sig, results.ranges.sig[dmrIndex])
+```
+
+```{r}
+# methylation data track
+methTrack_sig <- DataTrack(range=cpgData_sig, groups=BRCA_sample_sheet$Type,genome = gen_sig,
+                       chromosome=chrom_sig, ylim=c(-0.05,1.05), col=brewer.pal(8, "Dark2"),
+                       type=c("a","p"), name="DNA Meth.\n(beta value)",
+                       background.panel="white", legend=TRUE, cex.title=0.8,
+                       cex.axis=0.8, cex.legend=0.8)
+# DMR position data track
+dmrTrack_sig <- AnnotationTrack(start=start_sig, end=end_sig, genome=gen_sig, name="DMR", 
+                            chromosome=chrom_sig,fill="darkred")
+```
+
+```{r}
+tracks_sig <- list(iTrack_sig, gTrack_sig, methTrack_sig, dmrTrack_sig,rTrack_sig)
+sizes <- c(2,2,10,2,3) # set up the relative sizes of the tracks
+custom_visualisation_DMRresults_sig <- plotTracks(tracks_sig, from=minbase_sig, to=maxbase_sig, showTitle=TRUE, add53=TRUE, add35=TRUE, grid=TRUE, lty.grid=3, sizes = sizes, length(tracks_sig))
+```
+

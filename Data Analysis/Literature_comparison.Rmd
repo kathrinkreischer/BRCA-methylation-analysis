@@ -1,0 +1,651 @@
+---
+title: "CpG analysis"
+author: "Irena Dikic"
+date: "2024-06-07"
+output: html_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+Methylierungsdaten laden
+```{r}
+wd <- getwd()
+data_path <- paste0(dirname(wd), '/data/BRCA_methylation_data.csv')
+BRCA_methylation_data_original <- read.csv(data_path, row.names=1)
+```
+
+```{r}
+print(head(BRCA_methylation_data_original))
+```
+
+
+Einführung der 7 diagnostischen CpGs
+```{r}
+#Creating vector with the 7 CpGs in BRCA diagnostics
+cpgs_for_BRCA_diagnosis <- c("cg20383521", "cg09804858", "cg06741896", "cg01668352", "cg10708955","cg06998282", "cg04658021")
+
+```
+
+```{r}
+# Checking if the 7 CpGs are contained in the original dataframe
+cpgs_present <- cpgs_for_BRCA_diagnosis %in% rownames(BRCA_methylation_data_original)
+
+print(cpgs_present)
+```
+
+```{r}
+#Creating data frame for 7 BRCA diagnostic CpGs
+cpgs_for_BRCA_diagnosis_data <- BRCA_methylation_data_original[rownames(BRCA_methylation_data_original) %in% cpgs_for_BRCA_diagnosis, ]
+
+print(cpgs_for_BRCA_diagnosis_data)
+```
+
+Annotation sheet laden
+```{r}
+wd <- getwd()
+data_path <- paste0(dirname(wd), '/data/BRCA_sample_sheet.csv')
+BRCA_sample_sheet <- read.csv(data_path, row.names=1)
+```
+
+```{r}
+#identical naming of the patient ID 
+colnames(cpgs_for_BRCA_diagnosis_data) <- gsub("\\.", "-", colnames(cpgs_for_BRCA_diagnosis_data))
+```
+
+```{r}
+#Subset of annotation data frame to Type
+tissue_types <- BRCA_sample_sheet[,7, drop=FALSE]
+print(tissue_types)
+```
+Fall nötig packages installieren
+```{r}
+install.packages("pheatmap")
+install.packages("RColorBrewer")
+```
+
+Heatmap der diagnostischen CpGs
+```{r}
+#Library pheatmap and brewer.pal
+library(pheatmap)
+library(RColorBrewer)
+
+#Adding color to tissue type 
+annotation_color <- list(Type=c(`Primary solid Tumor`='red', `Solid Tissue Normal` = 'blue'))
+
+#Heatmap complete linkage
+pheatmap(cpgs_for_BRCA_diagnosis_data, 
+         show_rownames = FALSE, 
+         show_colnames = FALSE,
+         cluster_rows = TRUE,
+         annotation_col = tissue_types, 
+         annotation_colors=annotation_color,
+         color=colorRampPalette(c("maroon4", "white", "darkgreen"))(100))
+```
+
+```{r}
+#diagnostic BRCA cpgs for spesific tissue
+healthy_patients <- cpgs_for_BRCA_diagnosis_data[,BRCA_sample_sheet$Type == 'Solid Tissue Normal'] 
+healthy_patients
+```
+
+```{r}
+tumor_patients <- cpgs_for_BRCA_diagnosis_data[,BRCA_sample_sheet$Type == 'Primary solid Tumor'] 
+print(tumor_patients)
+```
+
+```{r}
+install.packages("ggpubr")
+install.packages("ggplot")
+install.packages("reshape22")
+```
+
+Violinplots für diagnostische CpGs mit Signifikanz 
+
+```{r}
+
+library(ggplot2)
+library(reshape2)
+library(ggpubr)
+
+# Creating long format for violinplot 
+healthy_long <- melt(as.matrix(healthy_patients), varnames = c("CpG", "PatientID"), value.name = "Methylation")
+healthy_long$Status <- 'Solid Tissue Normal'
+
+tumor_long <- melt(as.matrix(tumor_patients), varnames = c("CpG", "PatientID"), value.name = "Methylation")
+tumor_long$Status <- 'Primary solid Tumor'
+
+# combine both long formats
+combined_data <- rbind(healthy_long, tumor_long)
+print(combined_data)
+```
+
+```{r}
+# Checking normality with Shapiro-Wilk test for methylation levels of a specific CpG site
+check_normality <- function(data) {
+  shapiro_test <- shapiro.test(data)
+  p_value <- shapiro_test$p.value
+  is_normal <- shapiro_test$p.value > 0.05
+  return(list(p_value = p_value, is_normal = is_normal))
+}
+
+# Significance test
+display_significance <- function(p_value) {
+  if (p_value < 0.001) {
+    return("***")
+  } else if (p_value < 0.01) {
+    return("**")
+  } else if (p_value < 0.05) {
+    return("*")
+  } else {
+    return("")
+  }
+}
+
+# Plots for each cpg with significance
+unique_cpgs <- unique(combined_data$CpG)
+
+for (cpg in unique_cpgs) {
+  # extract dta for each cpg from data
+  data <- subset(combined_data, CpG == cpg)$Methylation
+  group <- subset(combined_data, CpG == cpg)$Status
+  
+  
+  # check normality
+  normality <- check_normality(data)
+  
+  # "significance" is created and set to an empty string
+  significance <- ""
+  
+  if (normality$is_normal) {
+    # t-Test 
+    t_test_result <- t.test(data ~ group)
+    p_value <- t_test_result$p.value
+    test_result <- t_test_result$statistic
+    test_name <- "t-test"
+    
+    # show significance
+    significance <- display_significance(p_value)
+  } else {
+    # Mann-Whitney-U-Test 
+    mwu_test_result <- wilcox.test(data ~ group)
+    p_value <- mwu_test_result$p.value
+    test_result <- mwu_test_result$statistic
+    test_name <- "Mann-Whitney-U-test"
+    
+    # show significance with star
+    significance <- display_significance(p_value)
+  }
+  
+# In Ihrem Schleifenblock, wo Sie die Daten für jeden CpG-Bereich verarbeiten:
+group <- factor(subset(combined_data, CpG == cpg)$Status, levels = c("Solid Tissue Normal", "Primary solid Tumor"))
+
+# Dann verwenden Sie group in ggplot:
+p <- ggplot(subset(combined_data, CpG == cpg), aes(x = group, y = Methylation, fill = group)) +
+  geom_violin(trim = FALSE) +
+  scale_fill_manual(values = c("Solid Tissue Normal" = "blue", "Primary solid Tumor" = "red")) +
+  labs(title = paste("Methylation Levels for", cpg, "\n", test_name, "p-value =", p_value, significance), x = "Status", y = "Methylation Level") +
+  theme_minimal()
+
+  
+  # show plot
+  print(p)
+  
+  ggsave(filename = paste0("plots/ViolinPlot_", cpg, ".pdf"), plot = p, width = 8, height = 6)
+}
+  
+
+
+
+```
+
+Boxplots für diagnostische CpGs
+
+```{r}
+significance_labels <- data.frame(CpG = character(), Significance = character(), stringsAsFactors = FALSE)
+
+
+# Calculate significance for each CpG site and store the results
+for (cpg in unique_cpgs) {
+  # Extract data for each CpG
+  data <- subset(combined_data, CpG == cpg)$Methylation
+  group <- subset(combined_data, CpG == cpg)$Status
+  
+  # Check normality
+  normality <- check_normality(data)
+  
+  if (normality$is_normal) {
+    # t-Test 
+    t_test_result <- t.test(data ~ group)
+    p_value <- t_test_result$p.value
+    significance <- display_significance(p_value)
+  } else {
+    # Mann-Whitney-U-Test 
+    mwu_test_result <- wilcox.test(data ~ group)
+    p_value <- mwu_test_result$p.value
+    significance <- display_significance(p_value)
+  }
+  
+  # Store the significance label
+  significance_labels <- rbind(significance_labels, data.frame(CpG = cpg, Significance = significance))
+}
+
+# Calculate the maximum y-value for positioning significance labels
+max_y_value <- max(combined_data$Methylation)
+```
+
+```{r}
+combined_data$CpG <- factor(combined_data$CpG, levels = unique(combined_data$CpG))
+
+# Definieren Sie Status als Faktor mit gewünschter Reihenfolge der Levels
+combined_data$Status <- factor(combined_data$Status, levels = c("Solid Tissue Normal", "Primary solid Tumor"))
+
+# Nun können Sie Ihren Plot erstellen
+p <- ggplot(combined_data, aes(x = CpG, y = Methylation, fill = Status)) +
+  geom_boxplot(outlier.colour = "black", outlier.size = 1, width = 0.5, position=position_dodge(width=0.5)) +
+  scale_fill_manual(values = c("Solid Tissue Normal" = "blue", "Primary solid Tumor" = "red")) +
+  labs( x = "CpG sites", y = "beta value") +
+  theme_minimal() +
+  theme(
+    plot.title = element_text(size = 12, face = "bold"),
+    axis.text.x = element_text(size = 12, angle = 45, hjust = 1),
+    axis.text.y = element_text(size = 20),
+    axis.title = element_text(size = 20, face = "bold"),
+    legend.title = element_text(size = 20, face = "bold"),
+    legend.text = element_text(size = 20),
+    plot.margin = margin(25, 25, 25, 25)
+  ) +
+  scale_x_discrete(expand = expansion(mult = c(0.2, 0.2))) + # Erhöht den Abstand zwischen den Boxen
+  geom_text(data = significance_labels, aes(x = CpG, y = max_y_value + 0.05, label = Significance), color = "black", size = 8, inherit.aes = FALSE)
+
+# Plot anzeigen
+print(p)
+
+# Plot speichern
+ggsave(filename = "plots/BoxPlot_Top7_CpG_Sites_1.pdf", plot = p, width = 20, height = 8)
+
+
+```
+
+Korrelation der diagnostischen CpGs
+
+```{r}
+correlation_matrix <- cor(t(cpgs_for_BRCA_diagnosis_data))
+
+<<<<<<< HEAD
+
+=======
+title <- textGrob("Korrelationsmatrix Heatmap", gp = gpar(fontsize = 14, fontface = "bold"))
+>>>>>>> eae701f4ebf79ee00259460ea01488cde736c1c4
+# Erstellen der Heatmap mit vollständiger Verknüpfung (complete linkage)
+p2 <- pheatmap(correlation_matrix,
+         show_rownames = TRUE, 
+         show_colnames = TRUE,
+         cluster_rows = TRUE,
+         annotation_colors=annotation_color,
+         color=colorRampPalette(c("maroon4", "white", "darkgreen"))(100),
+         cellwidth = 15,  # Breite jeder Zelle in Pixeln
+         cellheight = 15,
+         main="Correlation Heatmap")
+
+ggsave(filename = "plots/Correlation_7_CpGs.pdf", plot = p2, width = 5, height = 5)
+```
+
+Laden Top_ranking_CpGs (signifikante CpGs der DMA)
+
+```{r}
+#laden der DMP csv Datei (CpG_overlap)
+wd <- getwd()
+data_path_2 <- paste0(dirname(wd), '/data/CpG_overlap.csv')
+Top_ranking_CpGs <- read.csv(data_path_2)
+```
+
+```{r}
+print(Top_ranking_CpGs)
+```
+
+Überprüfen ob die 7 Diagnosemarker aus Paper1 ( <https://doi.org/10.3389/fcell.2020.529386> ) in Top_ranking_CpGs sind (nicht in report)
+
+```{r}
+# CpG-Ränge bestimmen
+ranks <- match(cpgs_for_BRCA_diagnosis, Top_ranking_CpGs$Name)
+
+# Ergebnisse anzeigen
+result_overlap_diagnostic_markers <- data.frame(CpG_ID = cpgs_for_BRCA_diagnosis, Rank = ranks)
+print(result_overlap_diagnostic_markers)
+
+```
+
+Vergleich Top 5000 CpGs aus Paper1 ( <https://doi.org/10.3389/fcell.2020.529386> ) mit Top_ranking_CpGs
+
+```{r}
+# Laden der benötigten Bibliotheken
+install.packages("readxl")
+```
+
+```{r}
+library(readxl)
+
+library(VennDiagram)
+
+# Dateipfad zur Excel-Datei angeben
+file_path <- "C:\\Users\\Irena Dikic\\Downloads\\Table 6.XLSX"  # Passe den Pfad entsprechend deiner Umgebung an tabelle 6 der Supplementary materials paper1
+
+# Excel-Datei einlesen (angenommen, es handelt sich um das erste Blatt)
+data <- read_excel(file_path)
+
+# Venn-Diagramm erstellen
+venn.diagram(
+  x = list(`Top_ranking_CpGs` = Top_ranking_CpGs[1:5000, ]$Name,
+           `result` = data$genename),
+  category.names = c("Top 5000 CpGs", "Top ranking CpGs paper"),
+  filename = "plots/venn_diagram_0.png",
+  col = c("skyblue", "purple"),
+  category.cex = 1.5,  # Größe der Kategorienamen
+  cat.pos = c(0, 0),   # Position der Kategorienamen außerhalb der Kreise
+  margin = 0.1,        # Rand um das Diagramm
+  fill = c("skyblue", "purple"),
+  alpha = 0.5
+)
+
+```
+
+Laden der Ergebnisse der DMR (mit allen signifikanten CpGs)
+
+```{r}
+#laden der DMR
+wd <- getwd()
+data_path_3 <- paste0(dirname(wd), '/data/DMRs_5000_sig_Cpgs.csv')
+results_ranges_sig <- read.csv(data_path_3)
+print(results_ranges_sig)
+```
+
+```{r}
+DMR_Genes <- na.omit(results_ranges_sig$overlapping.genes)
+```
+
+Vergleich die Top 250 ranking Gene in Paper2 (<https://doi.org/10.3390%2Fcancers13071677>) DMR
+
+```{r}
+# Erstellen des Vektors mit Gen-Symbolen
+top_250_DMG_paper <- c("OR2M7", "OR2M3", "CCL11", "FGF12-AS1", "MIR21", "BPIFA4P", "BRWD1-AS1", 
+                  "LILRA2", "TSTD1", "SNORD52", "CD34", "EDNRB", "CR1", "NEFL", "BHMT2", 
+                  "NKX2-1-AS1", "SNCA", "ITPRIPL1", "HNF1B", "SYNDIG1", "GAL3ST3", "FOXB2", 
+                  "RCN1", "AKR1B1", "CEBPA-AS1", "LINC01158", "RAX", "MIR9-3", "ERN2", 
+                  "ST8SIA3", "GRIA4", "SALL2", "GSC2", "PCDH17", "EPHA5", "CYP2T2P", "NEXN", 
+                  "TVP23BP1", "UGT3A2", "AKNA", "ZNF559-ZNF177", "HOXD9", "ZNF232", "CA3", 
+                  "RXFP3", "KCNE3", "MEOX2", "NR2E1", "VGLL2", "ULK4P2", "GNG11", "CHST2", 
+                  "GPR149", "ADAMTS20", "LHFPL4", "UBA7", "ATOH1", "UNCX", "CHL1-AS2", 
+                  "CCDC67", "KCNAB3", "CCDC8", "PCSK1", "DLG5-AS1", "MGARP", "GABRA4", 
+                  "KLHL1", "ADRB3", "TTYH1", "MOS", "HTR1A", "INA", "RBM27", "CRCT1", 
+                  "CLEC11A", "OTP", "OLIG2", "VSX1", "DGAT2L7P", "PRSS30P", "ZFHX4-AS1", 
+                  "FSIP2", "ZNF177", "LHX9", "CD46P1", "ZNF571-AS1", "OLIG3", "KCTD8", 
+                  "HIST2H3D", "USP44", "GRASP", "NPY", "MSX2P1", "POU3F3", "PCDH10", 
+                  "ZNF560", "WT1-AS", "QRFPR", "L1TD1", "ACTL6B", "DNASE1L2", "MSC", 
+                  "SERPING1", "YWHAEP7", "PRDM13", "SLITRK1", "FEZF2", "NPBWR1", "NKX2-1", 
+                  "OTX2", "FZD7", "PRLHR", "FAM162B", "LHX8", "ENPP2", "PTF1A", "FAM90A28P", 
+                  "ZNF551", "TBX15", "EVX2", "GALR3", "ONECUT2", "CYP2A7P1", "HOXD-AS2", 
+                  "AVPR1A", "PDX1", "CDX2", "TLX2", "TFAP2D", "ZIC1", "LHX1", "ZIC4", 
+                  "SOX14", "GHSR", "GALR1", "DMRTA2", "SLC32A1", "NEUROG3", "FOXQ1", 
+                  "HOXA4", "FOXA2", "MARCH11", "VSTM2B", "CHRND", "CYP2A13", "CARTPT", 
+                  "ACTA1", "C12orf68", "YBX3P1", "RESP18", "WT1", "LINC00966", "HSPB6", 
+                  "PHOX2B", "NETO1", "MAGI2-AS3", "C6orf58", "ZNF876P", "EID3", "TCF24", 
+                  "PCDH8", "SSTR1", "MIR663A", "SFTA3", "C14orf39", "BHLHA9", "SST", 
+                  "NEFH", "NRIP2", "SOX1", "NMBR", "HMX2", "SCGB1B2P", "GLIPR1L1", "FOXD4", 
+                  "ALX1", "UNC93B7", "POU4F3", "CDO1", "NES", "NKX2-6", "BARHL2", "NKX2-2", 
+                  "SPARC", "NEFM", "HTR1B", "DBX1", "TBX18", "CCDC36", "DSC3", "HOXD8", 
+                  "RHOQP2", "HIST3H2BA", "DRD5", "PRAP1", "FOXG1", "ABCB10P4", "POU4F1", 
+                  "HOXD12", "SIX6", "HOTAIRM1", "NXPH1", "NKX2-4", "FOXE3", "RNU5F-2P", 
+                  "SLC18A3", "SKOR2", "NKX1-1", "MIR9-1", "HCG16", "ASCL4", "NKAPL", 
+                  "CPXM1", "NKX6-2", "SOX17", "SYNE1-AS1", "ZNF728", "UTF1", "BHLHE23", 
+                  "MED15P3", "KCNJ2-AS1", "GABRG2", "ATXN8OS", "NEUROD1", "OXT", "IFNL4P1", 
+                  "CLEC14A", "GSX1", "HIST1H4F", "COX11P1", "HIST2H3PS2", "POU4F2", 
+                  "OR2I1P", "FOXD3", "MIR129-2", "BCHE", "TAC1", "HIST1H1A", "ANXA1", 
+                  "NKX2-2-AS1", "MT1L", "TRH", "CCDC181", "ZNF154", "PRAC1", "ZPBP2", 
+                  "PDIA3P1", "FERD3L", "MIR124-2", "COX7A1")
+
+```
+
+Untersuchen der Ränge der Top 250 Gene des papers in unserem Datensatz
+
+```{r}
+# Rang der Gen-Symbole ermitteln
+gene_ranks <- match(top_250_DMG_paper,DMR_Genes)
+
+# Ergebnisse anzeigen
+result_overlap_250_genes <- data.frame(UCSC_RefGene_Name = top_250_DMG_paper, Rank = gene_ranks)
+print(result_overlap_250_genes)
+
+```
+
+```{r}
+non_na_result <- result_overlap_250_genes[!is.na(result_overlap_250_genes$Rank), ]
+
+# Ausgeben des gefilterten Dataframes
+print(non_na_result)
+```
+
+```{r}
+# Installation des VennDiagram-Pakets (falls noch nicht installiert)
+install.packages("VennDiagram")
+```
+
+```{r}
+# Venn-Diagramm erstellen
+library(VennDiagram)
+venn.diagram(
+  x = list(`Top_Genes` = DMR_Genes, `genes_result_overlap_250_genes` = top_250_DMG_paper),
+  category.names = c("DMR genes", "Top 250 genes"),
+  filename = "plots/venn_diagram_1.1.png",
+  col = c("skyblue", "lightgreen"),
+  category.cex = 1.5,  # Größe der Kategorienamen
+  cat.pos = c(0, 0),   # Position der Kategorienamen außerhalb der Kreise
+  cat.fontfamily = "italic",
+  margin = 0.1,     # Rand um das Diagramm
+  fill = c("skyblue", "lightgreen"),
+  alpha = 0.5,
+  ext.pos=c(180,180),
+  ext.length = c(0.65,0.85),
+  ext.dist = c(0,0.01),
+  fontfamily="italic"
+)
+
+```
+
+
+```{r}
+# Venn-Diagramm erstellen
+venn.diagram(
+  x = list(`Top_Genes` = DMR_Genes[1:500], `genes_result_overlap_250_genes` = top_250_DMG_paper),
+  category.names = c("DMR genes", "Top 250 genes"),
+  filename = "plots/venn_diagram_1.png",
+  col = c("skyblue", "lightgreen"),
+  category.cex = 1.5,  # Größe der Kategorienamen
+  cat.pos = c(0, 0),   # Position der Kategorienamen außerhalb der Kreise
+  cat.fontfamily = "italic",
+  margin = 0.1,     # Rand um das Diagramm
+  fill = c("skyblue", "lightgreen"),
+  alpha = 0.5,
+
+  fontfamily="italic"
+)
+
+```
+
+Vergleich die Top 664 ranking Gene in Paper3 (<https://www.nature.com/articles/s41467-021-25661-w#Sec30>) mit DMR (nicht in Report)
+
+```{r}
+top_663_DMG_paper <- c("ARHGAP44", "PFKP", "ARMCX2", "NKX2-2", "ANKRD24", "ZIC2", "PRAME", "GATA2", "PLCH1", 
+    "SMAGP", "CIRBP", "FCGBP", "IGSF22", "TMEM97", "CBX7", "SIX4", "MTFR1", "SPDYC", 
+    "MAGEC2", "OLFM1", "NEK6", "PPP2R2C", "F12", "ZNF467", "NKX2-2", "C9orf91", "DYNLRB2", 
+    "PPP2R4", "GPRC5C", "SDSL", "EEF1A2", "MUC1", "KMO", "SIDT1", "MUCL1", "SLC9A3R1", 
+    "UNC5A", "MMEL1", "SFRP1", "MGST2", "C9orf116", "REEP1", "WIBG", "CREB3L4", "ERGIC1", 
+    "BLVRB", "AR", "ALDH4A1", "MAPT", "PLEKHB1", "RGMA", "FSCN1", "WWP1", "ROPN1", "BCL11A", 
+    "CYP4Z2P", "UCN", "TRIL", "MLPH", "ROPN1B", "FAH", "PIWIL4", "ACOX2", "AQP11", "ABCA12", 
+    "FERMT1", "SPDEF", "SOX10", "ABCC11", "RND1", "ZIC2", "CYP4Z1", "PTK6", "SPINK8", 
+    "PLEKHG2", "TRIM3", "GABRP", "GPR160", "MBP", "REEP6", "INPP4B", "UGDH", "LRRC26", 
+    "C9orf152", "LRFN2", "ENPP1", "LRRC8D", "SHC4", "FOXA1", "DNAJC22", "RHOB", "LOXL4", 
+    "ACTR3B", "IL17RD", "UGT8", "FZD7", "AGR2", "ZNF280B", "TUBB2B", "FOXC1", "TFCP2L1", 
+    "SRSF12", "QPCT", "NDUFC2", "ATL2", "HORMAD1", "MFGE8", "NAB1", "CYYR1", "CRYAB", 
+    "CMTM7", "OGFRL1", "DSC3", "SLC43A3", "KIT", "GPM6B", "LRRN1", "SMO", "TRNP1", "CDK6", 
+    "MT1M", "RND2", "OR7E156P", "CHRNB1", "KRTAP21-1", "CTAG2", "TFF2", "MAGEA9B", "WDR72", 
+    "C12orf56", "DSCR8", "GTSF1", "INSL6", "MAGEA2B", "MAGEA2", "CSAG1", "PAGE2B", "PAGE2", 
+    "MAGEA3", "MAGEA6", "MAGEA12", "PFN2", "TMEM150C", "NGFRAP1", "SPTLC1", "FAM160B2", 
+    "PSPC1", "GSPT2", "EXOSC6", "SLC25A4", "GSTO1", "TUBA1A", "IFI27L2", "MT1E", "GABARAPL2", 
+    "FAM177A1", "PARL", "CGRRF1", "NUS1", "UBE2E3", "CYTH2", "ALDH1A3", "PSMA1", "ARMCX1", 
+    "MT1IP", "VPS41", "ZMAT3", "TSC22D1", "ARMCX6", "DISC1", "CD55", "RABL2A", "COMMD8", 
+    "FAM167A", "SNRPN", "SCPEP1", "C6orf165", "KRT16P3", "ZNF791", "ARSH", "IREB2", "CASP6", 
+    "ZNF451", "MED29", "PRNP", "SLC24A1", "NFIB", "DYNC2LI1", "PIK3R1", "PTN", "FUNDC1", 
+    "PSMG1", "NHP2L1", "TUSC3", "DSTN", "LRRC19", "AP3S1", "IFT52", "ADD3", "SNAP23", 
+    "EXOSC8", "CRIM1", "BMP2K", "KIAA1257", "TRUB1", "SNX7", "TMEM41A", "EGLN1", "C4orf33", 
+    "PIK3C2A", "KRT16", "BEX4", "C19orf43", "UBLCP1", "TNFSF9", "RPS6KA3", "HERPUD2", "PRPSAP2", 
+    "CCT6P3", "CTSO", "UBE2B", "ROCK2", "TSPYL5", "ZNF717", "MAT2B", "YWHAB", "KLHDC10", "INTS10", 
+    "CAB39L", "SPDYA", "CRCP", "PEG10", "OMG", "CBWD1", "CCNC", "C11orf49", "GYG1", "NUTF2", "TASP1", 
+    "GNB5", "REL", "CRK", "CSNK1A1", "FAF1", "ARF3", "FBXO3", "BCL10", "GALNT7", "COMMD2", "SUMF2", 
+    "VWA5A", "EID2", "TCTN3", "TCEAL2", "SLC25A24", "ZNF428", "ZNF429", "TAS2R30", "ARPC5", "LXN", 
+    "DNM1L", "PSMC5", "FAM174A", "PRRG4", "POTEKP", "ZNF286A", "ASGR1", "WDFY3", "TSR1", "SEPT10", 
+    "NGLY1", "PLIN3", "AKIRIN1", "CYP7B1", "LIN52", "ARPC3", "PRKAG1", "DSG3", "PIGH", "UBE2G1", 
+    "CAPRIN1", "ARMC10", "HIATL1", "ROCK1", "RELL2", "CDC42", "AGPAT5", "SLC35A3", "SUSD4", 
+    "ZDHHC7", "FAM21A", "CACNB4", "LYRM2", "QKI", "GTF2IP1", "SRP54", "GCC2", "RBBP4", "DYRK1A", 
+    "YEATS4", "TES", "CCNL2", "PNPLA8", "EIF4G2", "TMBIM4", "UBE2L6", "DHX57", "B2M", "RBP5", 
+    "MORN2", "TRPC2", "BTBD1", "FAM96A", "LAMP2", "SLC31A1", "STOM", "GPR149", "TXN", "GART", 
+    "TCEA1", "APITD1", "RAB13", "PARP15", "YME1L1", "C11orf31", "ERP27", "RPAP3", "PSMA6", 
+    "SH3BGRL", "SGPP1", "SCRG1", "PGK1", "ATRX", "ADAM10", "DSN1", "CETN2", "SLC41A2", "TTC28", 
+    "ERH", "CST6", "ZNF138", "ZNF513", "ACOT6", "NAA20", "HIST1H4J", "LONRF2", "ANKRD36", "WFDC3", 
+    "FAHD1", "GAL", "PSMA5", "SRP9", "GLS2", "VOPP1", "ROBO2", "NBPF8", "TOMM5", "TM6SF1", "HOTAIR", 
+    "GPR26", "MED13L", "EFEMP2", "TXNDC17", "C1orf210", "BOLA2", "ATP6AP2", "HOXC13", "ZNF703", 
+    "ANKRD22", "AIMP2", "KIAA0895L", "MYLK2", "ZNF549", "C2orf54", "STT3B", "LYPLA1", "MCCC2", 
+    "TSEN15", "TMEM183A", "USP36", "RPA3", "BRI3BP", "ACCS", "COX6C", "SFXN5", "MB", "PRRT3", 
+    "RAD51AP1", "PSMB3", "CLEC3A", "BUB1", "TMED2", "ATPIF1", "ZNF552", "KISS1R", "C22orf46", 
+    "SKA1", "ABTB1", "HIST2H3A", "MAD2L1", "USH1G", "GNAL", "HDAC5", "SLC50A1", "UBE2T", "UBE2C", 
+    "C14orf39", "TK1", "LRRC66", "MECP2", "FOXM1", "OR2K2", "MLLT10", "KIAA0101", "PIK3R4", 
+    "RBM28", "SLC27A1", "VNN2", "EXO1", "BSX", "FOSL1", "CREB1", "TOP2A", "LRRC58", "CNTF", 
+    "KIAA0355", "CDK1", "EPHA10", "BIRC5", "ZNF438", "MCF2L", "TIMELESS", "TAF11", "CCDC149", 
+    "KLF11", "CCNB2", "FOXJ2", "HIPK4", "OR10J5", "NCKAP5L", "ZNF491", "UGT2B4", "IL18RAP", 
+    "RASGEF1C", "HOXB4", "FMO6P", "DIP2C", "PRDM6", "PARP16", "RXFP3", "HGF", "VPS33A", "STAT5B", 
+    "ACSF3", "AQP12B", "LAMB4", "CCDC146", "JMJD6", "POLR3K", "OR52N1", "CD300E", "ADH6", "REXO1", 
+    "OR6Y1", "TRIM52", "FMO4", "CDCA5", "KDR", "MLNR", "POM121C", "HIC2", "IRG1", "FAM168B", "GRID1", 
+    "BBS9", "THSD7B", "SLC10A5", "IFNA5", "UBOX5", "KHDC1", "ARID3B", "EDDM3A", "SH2D5", "MYBPC2", 
+    "DLC1", "DTL", "NOTCH3", "NFATC3", "BTC", "TRPC6", "SPAM1", "ITPKB", "GPRC5D", "FBXO27", "RAD17", 
+    "STAT4", "FAM193B", "ZNF528", "SLC14A1", "POU4F2", "CENPV", "TAS2R31", "LRPPRC", "RNF123", "SKP2", 
+    "TMEM132E", "PLD6", "ATP1B4", "COX7B2", "GEMIN5", "ATP5D", "CAPSL", "CT45A5", "OR6C2", "MPP4", 
+    "OPLAH", "MTNR1A", "LINC00347", "DCDC1", "C12orf56", "ARHGEF11", "THAP6", "SNX29", "RASGRP3", 
+    "CD320", "DSCAM", "H1FNT", "NT5DC2", "LINC00229", "ACVR2B", "RRN3P1", "SPINK7", "VENTXP7", 
+    "PLCXD1", "CREG2", "C1orf189", "MED8", "C11orf87", "POC1A", "PAK1", "EFR3B", "FLYWCH2", "S100P", 
+    "CRTC1", "MFSD4", "HTATSF1", "HELLS", "CLGN", "PITX1", "TRH", "MCM5", "COG7", "FIBCD1", "SLC6A8", 
+    "TXNDC11", "ST3GAL1", "CCDC15", "HLTF", "CCDC114", "NPPA", "CNTLN", "TELO2", "C14orf159", "TLX1", 
+    "GTF2H2B", "GTF3C1", "MTSS1", "CHN2", "TTK", "MYH6", "CXADR", "PCNX", "MED12L", "SPANXN2", "C16orf13", 
+    "PSCA", "GALNT5", "NCAPG", "SPINK4", "BMI1", "CNTD2", "ESF1", "RHOU", "ZC3H3", "AXIN2", "GSTA4", 
+    "PAGE2B", "ETV3", "C19orf54", "SAC3D1", "ZBTB34", "CST7", "NT5DC3", "ARID3A", "CALML5", "FAM135B", 
+    "WDR72", "FAM178A", "NUAK2", "TAOK2", "PCDH20", "HFM1", "RAD54B", "ZNF706", "TSC2", "EPRS", "E2F7", 
+    "TPSG1", "KNTC1", "LEF1", "PLA2G10", "PAQR5", "CAPN9", "P4HA3", "LRRC16B", "PPFIA4", "TGM3", "CPA6", 
+    "APOBR", "CENPO", "PLEKHG2", "SCUBE1", "OXR1", "ARHGEF2", "CPLX1", "NBAS", "APOA1", "VWA3A", 
+    "TMEM145", "SLC26A9", "PLD1", "RHBDL1", "CACNA1I", "SLC6A9", "C16orf72", "LRRC31", "NEUROD1", 
+    "CNOT4", "ME3", "SYT13", "TTC13", "ATP8B3", "KLHL22", "PALB2", "STXBP5", "DARS2", "RET", "KREMEN2", 
+    "FFAR2", "MIA3", "VSIG10L", "PTP4A3", "SLC45A4", "LFNG", "CCDC117", "GNPTG", "PAGE2", "TNFRSF18", 
+    "MUC5AC", "ZNRF3", "CEACAM5", "CEACAM6", "ITPKA")
+    
+
+
+
+
+```
+
+```{r}
+# Rang der Gen-Symbole ermitteln
+gene_ranks <- match(top_663_DMG_paper,DMR_Genes)
+
+# Ergebnisse anzeigen
+result_overlap_663_genes <- data.frame(UCSC_RefGene_Name = top_663_DMG_paper, Rank = gene_ranks)
+print(result_overlap_663_genes)
+
+```
+
+```{r}
+non_na_result <- result_overlap_663_genes[!is.na(result_overlap_663_genes$Rank), ]
+
+# Ausgeben des gefilterten Dataframes
+print(non_na_result)
+```
+
+```{r}
+# Venn-Diagramm erstellen
+venn.diagram(
+  x = list(`genes_Top_ranking_CpGs` = DMR_Genes, `genes_result_overlap_663_genes` = top_663_DMG_paper),
+  category.names = c("DMR genes", "663 Genes paper"),
+  filename = "plots/venn_diagram_2.png",
+  col = c("skyblue", "pink"),
+  cat.fontfamily = "italic",
+  category.cex = 1.5,  # Größe der Kategorienamen
+  cat.pos = c(0, 0),   # Position der Kategorienamen außerhalb der Kreise
+  margin = 0.1,     # Rand um das Diagramm
+  fill = c("skyblue", "pink"),
+  alpha = 0.5,
+    ext.pos=c(180,180),
+  ext.length = c(0.8,0.9),
+  ext.dist = c(0,0.01),
+  fontfamily="italic"
+  
+)
+```
+
+Vergleich DMR mit Paper2 und Paper3
+
+```{r}
+# Laden der erforderlichen Bibliotheken
+library(VennDiagram)
+
+# Venn-Diagramm erstellen
+venn.diagram(
+  x = list(`Top_ranking_CpGs (10000)` = DMR_Genes,
+           `result_overlap_663_genes` = top_663_DMG_paper,
+           `result_overlap_250_genes` = top_250_DMG_paper),
+  category.names = c("DMR genes", "663 genes paper", "250 Top ranking genes paper"),
+  cat.fontfamily= "italic",
+  filename = "plots/venn_diagram_3.png",
+  col = c("skyblue", "pink","lightgreen" ),  # Farben für die drei Kreise
+  margin = 0.1,     # Rand um das Diagramm
+  fill = c("skyblue", "pink","lightgreen"),  # Füllfarben der Bereiche
+  alpha = 0.5,  # Transparenz der Bereiche
+  euler.d = TRUE,  # Anzeige von Euler-Diagrammen
+  cat.pos = c(-20,20,180),
+  fontfamily="italic"
+)
+
+```
+
+Wie heißen die 5 Gene, welche in allen 3 datensätzen vorhanden sind
+
+```{r}
+# Genes finden, die in allen drei DataFrames vorhanden sind
+genes_intersect_all <- Reduce(intersect, list(DMR_Genes,top_663_DMG_paper, top_250_DMG_paper ))
+
+# Ausgabe der Gene
+print(genes_intersect_all)
+
+```
+
+Hereditäre CpGs Paper4(<https://www.nature.com/articles/s41467-018-03058-6>) (nicht in Report)
+
+```{r}
+# Vektor mit den CpG-IDs erstellen
+CpGs_for_BRCA_heredity <- c(
+  "cg06536614", "cg10306192", "cg18110333", "cg00124993", 
+  "cg26328633", "cg25340688", "cg18514595", "cg26896946", 
+  "cg11035303", "cg23012654", "cg26773954", "cg22901919", 
+  "cg04417708", "cg18584561", "cg11608150", "cg01741999", 
+  "cg01074083", "cg02096220", "cg03916490", "cg27639199", 
+  "cg25188166", "cg05865327", "cg23947138", "cg05187003"
+)
+
+
+# CpG-Ränge bestimmen
+ranks <- match(CpGs_for_BRCA_heredity, Top_ranking_CpGs$Name)
+
+# Ergebnisse anzeigen
+result_overlap_hereditary_markers <- data.frame(CpG_ID = CpGs_for_BRCA_heredity, Rank = ranks)
+print(result_overlap_hereditary_markers)
+
+
+```

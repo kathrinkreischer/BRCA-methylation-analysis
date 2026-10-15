@@ -1,0 +1,117 @@
+---
+title: "Correlation Heatmap with age annotation"
+author: "Antonia Eisenhofer"
+date: "2024-07-02"
+output: html_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+
+
+```{r}
+wd <- getwd()
+data_path <- paste0(dirname(wd), '/data/BRCA_methylation_data.csv')
+BRCA_methylation_data_original <- read.csv(data_path, row.names=1)
+```
+
+```{r}
+wd <- getwd()
+data_path <- paste0(dirname(wd), '/data/BRCA_sample_sheet.csv')
+BRCA_sample_sheet <- read.csv(data_path, row.names=1)
+```
+
+```{r}
+wd <- getwd()
+data_path <- paste0(dirnmáme(wd), '/data/DMPs_10.000.csv')
+DMPs_10.000 <- read.csv(data_path, row.names=1)
+```
+
+Top 500 sifnifikante CpGs: 
+```{r}
+DMPs_500_cor <- DMPs_10.000[1:500,]
+```
+
+```{r}
+significant_cpg_ids_500_cor <- rownames(DMPs_500_cor)
+# Filtern und Sortieren der Zeilen in BRCA_methylation_original basierend auf den CpG-Ids in DMPS_10000
+BRCA_methylation_filtered_500_cor <- BRCA_methylation_data_original[significant_cpg_ids_500_cor, ]
+
+# Sicherstellen, dass die Reihenfolge der CpGs der Reihenfolge in DMPS_10000 entspricht
+BRCA_methylation_filtered_500_cor <- BRCA_methylation_filtered_500_cor[order(match(rownames(BRCA_methylation_filtered_500_cor), significant_cpg_ids_500_cor)), ]
+```
+
+```{r}
+#identische Bennung der Patient-ID  Bindestrich
+colnames(BRCA_methylation_filtered_500_cor) <- gsub("\\.", "-", colnames(BRCA_methylation_filtered_500_cor))
+```
+
+```{r}
+# Herasufiltern des Alters aus BRCA_sample_sheet
+age <- BRCA_sample_sheet$Days.to.birth
+
+# Entfernen der Patienten, die keine Altersangabe haben
+BRCA_sample_sheet_patients_age <- BRCA_sample_sheet[!is.na(BRCA_sample_sheet$Days.to.birth), ]
+
+# Umrechnung der Tage in Jahre, um das Alter zu bestimmen (unter Berücksichtigung der Schaltjahre)
+BRCA_sample_sheet_patients_age$age_in_years <- BRCA_sample_sheet_patients_age$Days.to.birth / 365.25*-1
+```
+
+
+```{r}
+#Subset des Annotation Dataframes mit dem Type
+#drop=FALSE behält die Dimensionen
+tissue_types_age_Heatmap <- BRCA_sample_sheet_patients_age[,7, drop=FALSE]
+```
+
+
+
+
+
+## Correlation Heatmap between patients with age annotation
+```{r}
+# Pearson-Korrelation zwischen den Patienten ausrechnen
+patient_cor_500_sigCpGs <- cor(BRCA_methylation_filtered_500_cor)
+
+# Farbgebung für tumour tissue rot und für solid tissue blau
+annotation_color <- list(
+  Type = c(`Primary solid Tumor` = 'red', `Solid Tissue Normal` = 'blue'),
+  Age = colorRampPalette(c("palegreen", "white", "darkblue"))(100))
+
+
+# age Annotation 
+age_annotation <- data.frame(Age = BRCA_sample_sheet_patients_age$age_in_years)
+rownames(age_annotation) <- rownames(BRCA_sample_sheet_patients_age)
+
+# Kombination der beiden Annotations:
+combined_annotation <- cbind(tissue_types_age_Heatmap, Age = age_annotation)
+
+# pdf erstellen 
+pdf("correlation_heatmap_patients_with_age_annotation_500_sig_CpGs.pdf")
+
+#Heatmap der Korrelation, geclustered mit complete linkage, Annotationen zum tissue Type
+correlation_heatmap_patients_Top_500_age_annotation <- pheatmap(patient_cor_500_sigCpGs, 
+         show_rownames = FALSE, 
+         show_colnames = FALSE, 
+         cellheight = 2, 
+         cellwidth = 2,
+    
+         annotation_col = combined_annotation, 
+         annotation_row = combined_annotation, 
+         annotation_colors=annotation_color, 
+         color = colorRampPalette(c("maroon4", "white", "darkgreen"))(100),
+         legend_breaks = seq(30, 80, 10),
+         legend_labels = seq(30, 80, 10)
+)
+
+
+dev.off()
+print(correlation_heatmap_patients_Top_500_age_annotation)
+         
+```
+
+
+
+

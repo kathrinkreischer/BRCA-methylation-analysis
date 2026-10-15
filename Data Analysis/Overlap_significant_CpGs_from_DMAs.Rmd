@@ -1,0 +1,237 @@
+---
+title: "Overlap significant CpGs"
+author: "Antonia Eisenhofer"
+date: "2024-06-20"
+output: html_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+I. Diesen Dataframe werden wir als Ausgangsdatensatz verwenden (DMPs durch das limma Package)
+Das Ergebnis I wird DMPs heißen 
+Das Ergebnis II wird dmps_with_ann heißen 
+
+# Packages laden
+```{r}
+library(knitr)
+library(limma)
+library(minfi)
+library(IlluminaHumanMethylation450kanno.ilmn12.hg19)
+library(IlluminaHumanMethylation450kmanifest)
+library(RColorBrewer)
+library(missMethyl)
+library(minfiData)
+library(Gviz)
+library(DMRcate)
+library(stringr)
+```
+```{r}
+# get the 450k annotation data
+ann450k <- getAnnotation(IlluminaHumanMethylation450kanno.ilmn12.hg19)
+head(ann450k)
+```
+# BRCA-Methylioerungsdaten in eine Matrix umwandeln
+## Methylierungsdaten laden
+```{r}
+wd <- getwd()
+data_path <- paste0(dirname(wd), '/data/BRCA_methylation_data.csv')
+BRCA_methylation_data_original <- read.csv(data_path, row.names=1)
+```
+
+# Umwandeln
+```{r}
+BRCA_methylation_matrix <- as.matrix(BRCA_methylation_data_original)
+```
+
+
+# Design Matrix erstellen
+```{r}
+wd <- getwd()
+data_path <- paste0(dirname(wd), '/data/BRCA_sample_sheet.csv')
+BRCA_sample_sheet <- read.csv(data_path, row.names=1)
+```
+
+```{r}
+#Syntax konform machen
+BRCA_sample_sheet$Type[1:30] <- c(rep("Primary.solid.Tumor",30))
+BRCA_sample_sheet$Type[31:60] <- c(rep("Solid.Tissue.Normal",30))
+
+# der Faktor, der uns interssiert, namlich Tumor und Normal
+tissueType <- factor(BRCA_sample_sheet$Type)
+
+# erstellen einer design matrix
+design <- model.matrix(~0+tissueType)
+colnames(design) <- levels(tissueType)
+
+# lineares models fitten
+fit <- lmFit(BRCA_methylation_data_original, design)
+
+print(fit)
+```
+
+```{r}
+# erstellen einer Kontrastmatrix für soezifischen Vergleich
+contrast_matrix <- makeContrasts(Primary.solid.Tumor-Solid.Tissue.Normal, levels=design)
+
+# Kontraste anwenden
+fit2 <- contrasts.fit(fit, contrast_matrix)
+fit2 <- eBayes(fit2)
+
+# Ergebnisse anzeigen
+results <- topTable(fit2, adjust="fdr", sort.by="P")
+head(results)
+
+#Anzahl an DM CpGs bei einer FDR<0.05
+summary(decideTests(fit2))
+```
+
+```{r}
+# Reihenfolge der CpGs in der Annotationstabelle an die Ergebnisse anpassen
+ann450kSub <- ann450k[match(rownames(BRCA_methylation_data_original), ann450k$Name), ]
+
+# Ergebnisse mit Annotationstabelle verknüpfen
+DMPs <- topTable(fit2, num=Inf, coef=1, genelist=ann450kSub)
+head(DMPs)
+```
+
+II. Das hier ist der andere Datensatz (herausgefunden durch das minfi package und die dmpFinder Funktion)
+
+```{r}
+wd <- getwd()
+data_path <- paste0(dirname(wd), '/data/BRCA_methylation_data.csv')
+BRCA_methylation_data_original <- read.csv(data_path, row.names=1)
+```
+
+```{r}
+wd <- getwd()
+data_path <- paste0(dirname(wd), '/data/BRCA_sample_sheet.csv')
+BRCA_sample_sheet <- read.csv(data_path, row.names=1)
+```
+
+```{r}
+#identische Bennung der Patient-ID  Bindestrich
+colnames(BRCA_methylation_data_original) <- gsub("\\.", "-", colnames(BRCA_methylation_data_original))
+```
+
+```{r}
+# Load necessary libraries
+library(minfi)
+library(IlluminaHumanMethylation450kanno.ilmn12.hg19)
+```
+
+```{r}
+#  Extract Tumor Type 
+Tumor_Type <- BRCA_sample_sheet$Type
+sample_ids <- BRCA_sample_sheet$TCGA.ID # Extract  Patient ID 
+methylation_data_dmp <- BRCA_methylation_data_original[, sample_ids] #assign the methylation data to the extracted patient IDs
+methylation_data_dmp <- as.matrix(methylation_data_dmp)
+```
+
+```{r}
+# Create a phenodata object
+pheno_data <- data.frame(phenotype = Tumor_Type)
+rownames(pheno_data) <- sample_ids
+
+# Run dmpFinder
+dmps <- dmpFinder(methylation_data_dmp, pheno = pheno_data$phenotype, type = "categorical")
+
+```
+
+
+```{r}
+# load Annotation for 450k-Chips 
+ann450k <- getAnnotation(IlluminaHumanMethylation450kanno.ilmn12.hg19)
+
+# apply dmp 
+dmps <- dmpFinder(methylation_data_dmp, pheno = pheno_data$phenotype, type = "categorical")
+
+# Extract methylation positions from the results
+meth_positions <- rownames(dmps)
+
+# Select annotations for the methylation positions
+matched_ann <- ann450k[match(meth_positions, ann450k$Name), ]
+
+# Combining results wirh the annotation
+dmps_with_ann <- cbind(dmps, matched_ann)
+```
+
+Signifikante CpGs: 
+Alle CpGs mit einem adjusted p-Value/q-Value kleiner als 0.05 werden aus I und II ausgewählt 
+
+```{r}
+significant_CpG_1 <- DMPs[DMPs$adj.P.Val < 0.05, ] #jetzt sind es 160587 Signifikante CpGs
+significant_CpG_2 <- dmps_with_ann[dmps_with_ann$qval < 0.05, ] #hier sind es 202725 signifikante CpGs
+```
+
+```{r}
+# hier werden die Zeilen-Namen als neue Spalte zu den jeweiligen Dataframes hinzugefügt
+significant_CpG_1$cpg_id <- rownames(significant_CpG_1)
+rownames(significant_CpG_1) <- NULL
+significant_CpG_2$cpg_id <- rownames(significant_CpG_2)
+rownames(significant_CpG_2) <- NULL
+``` 
+
+
+Overlap der beiden Signifikanten CpGs
+```{r}
+overlap_cpg <- significant_CpG_1[significant_CpG_1$cpg_id %in% significant_CpG_2$cpg_id, ]
+```
+
+## Annotation mit Hypermethylation und Hypomethylation 
+(soll als Spalte zusätzlich an den Dataframe angehängt werden)
+
+Zuerst möchten wir Hypermethylation (viel Methylierung) und Hypomethylation (wenig Methylierung) durch den log Fold Change (logFC) bestimmen 
+
+I. Hypomethylation und Hypermethylation wird an den overlap_cpg (Dataframe mit den signifikanten CpGs und den Annotationen) als neue Spalte angehängt
+
+II. Die Signifikanten CpGs werden aus dem BRCA_methylation_data_original Daten herausgefiltert und die neue Spalte mit Hypo und Hypermethylation wird auch hier angehängt
+
+```{r}
+# Bestimmung von Hypermethylation oder Hypomethylation aus dem logFC
+overlap_cpg$'Hypomethylation/Hypermethylation' <- ifelse(overlap_cpg$logFC > 0, "Hypermethylation", "Hypomethylation")
+```
+
+
+```{r}
+# Extrahieren der CpG_Ids aus overlap_cpg
+significant_cpg_ids <- overlap_cpg$cpg_id
+
+# Filtern der Zeilen in BRCA_methylation_data_original basierend auf den CpG_Ids in overlap_cpg
+methylation_data_overlap <- BRCA_methylation_data_original[rownames(BRCA_methylation_data_original) %in% significant_cpg_ids, ]
+ 
+methylation_data_overlap_hypo_hyper <-methylation_data_overlap
+
+# Umwandeln der Zeilennamen in eine Spalte
+methylation_data_overlap_hypo_hyper$cpg_id <- rownames(methylation_data_overlap_hypo_hyper)
+
+# Zusammenführen der Hypo/Hyper-Informationen aus overlap_cpg zu methylation_data_overlap
+methylation_data_overlap_hypo_hyper <- merge(methylation_data_overlap_hypo_hyper, overlap_cpg[, c("cpg_id", 'Hypomethylation/Hypermethylation')], by = "cpg_id")
+
+# Zeilennamen wiederherstellen und cpg_id-Spalte entfernen
+rownames(methylation_data_overlap_hypo_hyper) <- methylation_data_overlap_hypo_hyper$cpg_id
+methylation_data_overlap_hypo_hyper$cpg_id <- NULL
+```
+
+
+Abspeichern
+```{r}
+overlap_cpg <- as.data.frame(overlap_cpg)
+write.csv(overlap_cpg, "CpG_overlap.csv", row.names = FALSE)
+```
+
+
+
+so werden die Daten dann in den weiteren Dokumenten geladen
+```{r}
+wd <- getwd()
+data_path <- paste0(dirname(wd), '/data/CpG_overlap.csv')
+overlap_cpg <- read.csv(data_path, row.names=NULL)
+```
+
+
+
+
+
+

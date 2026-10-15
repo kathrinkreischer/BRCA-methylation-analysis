@@ -1,0 +1,179 @@
+---
+title: "Verbesserung"
+author: "Irena Dikic"
+date: "2024-07-08"
+output: html_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+---
+title: "CpG analysis"
+author: "Irena Dikic"
+date: "2024-06-07"
+output: html_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+Methylierungsdaten laden
+```{r}
+wd <- getwd()
+data_path <- paste0(wd, '/data/BRCA_methylation_data.csv')
+BRCA_methylation_data_original <- read.csv(data_path, row.names=1)
+```
+
+Einführung der 7 diagnostischen CpGs
+```{r}
+#Creating vector with the 7 CpGs in BRCA diagnostics
+cpgs_for_BRCA_diagnosis <- c("cg20383521", "cg09804858", "cg06741896", "cg01668352", "cg10708955","cg06998282", "cg04658021")
+
+```
+
+```{r}
+# Checking if the 7 CpGs are contained in the original dataframe
+cpgs_present <- cpgs_for_BRCA_diagnosis %in% rownames(BRCA_methylation_data_original)
+
+print(cpgs_present)
+```
+
+```{r}
+#Creating data frame for 7 BRCA diagnostic CpGs
+cpgs_for_BRCA_diagnosis_data <- BRCA_methylation_data_original[rownames(BRCA_methylation_data_original) %in% cpgs_for_BRCA_diagnosis, ]
+
+print(cpgs_for_BRCA_diagnosis_data)
+```
+
+DMA Ergebnisse laden
+```{r}
+#laden der DMP csv Datei (CpG_overlap)
+wd <- getwd()
+data_path_2 <- paste0(wd, '/data/CpG_overlap.csv')
+Top_ranking_CpGs <- read.csv(data_path_2)
+```
+
+```{r}
+cpgs_present_DMA <- cpgs_for_BRCA_diagnosis %in% Top_ranking_CpGs$Name
+
+print(cpgs_present_DMA)
+```
+```{r}
+# Filtern der Top_ranking_CpGs für die in cpgs_for_BRCA_diagnosis vorhandenen CpGs
+filtered_CpGs <- Top_ranking_CpGs[Top_ranking_CpGs$Name %in% cpgs_for_BRCA_diagnosis, ]
+
+# Drucken der gefilterten Tabelle
+print(filtered_CpGs)
+```
+
+
+
+Annotation sheet laden
+```{r}
+wd <- getwd()
+data_path <- paste0(wd, '/data/BRCA_sample_sheet.csv')
+BRCA_sample_sheet <- read.csv(data_path, row.names=1)
+```
+
+```{r}
+#identical naming of the patient ID 
+colnames(cpgs_for_BRCA_diagnosis_data) <- gsub("\\.", "-", colnames(cpgs_for_BRCA_diagnosis_data))
+```
+
+```{r}
+#Subset of annotation data frame to Type
+tissue_types <- BRCA_sample_sheet[,7, drop=FALSE]
+print(tissue_types)
+```
+
+```{r}
+#diagnostic BRCA cpgs for spesific tissue
+healthy_patients <- cpgs_for_BRCA_diagnosis_data[,BRCA_sample_sheet$Type == 'Solid Tissue Normal'] 
+healthy_patients
+```
+
+```{r}
+tumor_patients <- cpgs_for_BRCA_diagnosis_data[,BRCA_sample_sheet$Type == 'Primary solid Tumor'] 
+print(tumor_patients)
+```
+
+```{r}
+install.packages("ggpubr")
+install.packages("ggplot")
+install.packages("reshape22")
+```
+
+
+```{r}
+
+library(ggplot2)
+library(reshape2)
+library(ggpubr)
+
+# Creating long format for violinplot 
+healthy_long <- melt(as.matrix(healthy_patients), varnames = c("CpG", "PatientID"), value.name = "Methylation")
+healthy_long$Status <- 'Solid Tissue Normal'
+
+tumor_long <- melt(as.matrix(tumor_patients), varnames = c("CpG", "PatientID"), value.name = "Methylation")
+tumor_long$Status <- 'Primary solid Tumor'
+
+# combine both long formats
+combined_data <- rbind(healthy_long, tumor_long)
+print(combined_data)
+```
+
+
+
+
+```{r}
+# Merge, um adjustierte p-Werte hinzuzufügen
+combined_data3 <- merge(combined_data, filtered_CpGs, by.x = "CpG", by.y = "Name", all.x = TRUE)
+
+# Überprüfen der kombinierten Daten
+print(combined_data3)
+
+```
+```{r}
+display_significance <- function(p_values) {
+  significance <- ifelse(p_values < 0.001, "***", 
+                         ifelse(p_values < 0.01, "**", 
+                                ifelse(p_values < 0.05, "*", "")))
+  return(significance)
+}
+
+# Definieren der Reihenfolge der CpGs für die Darstellung im Plot
+combined_data3$CpG <- factor(combined_data$CpG, levels = unique(combined_data$CpG))
+
+# Definieren Sie Status als Faktor mit gewünschter Reihenfolge der Levels
+combined_data3$Status <- factor(combined_data$Status, levels = c("Solid Tissue Normal", "Primary solid Tumor"))
+
+# Erstellen des Boxplots mit Signifikanzsymbolen
+library(ggplot2)
+p <- ggplot(combined_data3, aes(x = CpG, y = Methylation, fill = factor(Status))) +
+  geom_boxplot(outlier.colour = "black", outlier.size = 1, width = 0.5, position = position_dodge(width = 0.5)) +
+  scale_fill_manual(values = c("blue", "red")) +
+  labs(x = "CpG sites", y = "beta value") +
+  theme_minimal() +
+  theme(
+    plot.title = element_text(size = 12, face = "bold"),
+    axis.text.x = element_text(size = 12, angle = 45, hjust = 1),
+    axis.text.y = element_text(size = 20),
+    axis.title = element_text(size = 20, face = "bold"),
+    legend.title = element_text(size = 20, face = "bold"),
+    legend.text = element_text(size = 20),
+    plot.margin = margin(25, 25, 25, 25)
+  ) +
+  geom_text(data = subset(combined_data3, !duplicated(CpG)), 
+            aes(label = display_significance(adj.P.Val.x), y = max(Methylation, na.rm = TRUE) + 0.05), 
+            color = "black", size = 7, vjust = -0.5, 
+            position = position_dodge(width = 0.5))
+
+# Plot anzeigen
+print(p)
+ggsave("Literatur_comparison_Boxplot_7_CpGs_after_DMA.pdf",plot = p, width = 20, height = 8)
+```
+
+

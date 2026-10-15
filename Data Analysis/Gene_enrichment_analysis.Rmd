@@ -1,0 +1,190 @@
+---
+title: "Hallmarks"
+output: pdf_document
+date: "2024-06-29"
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+```{r}
+wd <- getwd()
+data_path <- paste0(dirname(wd), '/data/BRCA_methylation_data.csv')
+BRCA_methylation_data_original <- read.csv(data_path, row.names=1)
+```
+
+```{r}
+wd <- getwd()
+data_path <- paste0(dirname(wd), '/data/DMPs.csv')
+DMPs <- read.csv(data_path, row.names=1)
+```
+
+```{r}
+library("missMethyl")
+```
+```{r}
+wd <- getwd()
+data_path <- paste0(dirname(wd), '/data/DMPs_10.000.csv')
+DMPs_10.000 <- read.csv(data_path, row.names=1)
+```
+
+```{r}
+wd <- getwd()
+data_path <- paste0(dirname(wd), '/data/DMRs_5000_sig_Cpgs.csv')
+DMR_sig <- read.csv(data_path)
+```
+
+```{r}
+#Signifikante CpGs auswählen
+significant_CpGs <- DMPs[DMPs$adj.P.Val < 0.05, ] #jetzt sind es 160587 Signifikante CpGs
+```
+
+```{r}
+library(IlluminaHumanMethylation450kanno.ilmn12.hg19)
+```
+# Gene ontolgy for Cpgs
+```{r}
+gst2 <- gometh(sig.cpg = rownames(significant_CpGs),
+              all.cpg = rownames(DMPs),
+              collection = "GO",
+              plot.bias = TRUE)
+```
+
+```{r}
+GO <- topGSA(gst2, n=10)
+GO
+```
+
+```{r}
+write.csv(GO, file = "GO_enrichment_160587_sig_CpGs.csv")
+```
+
+```{r}
+gst2.kegg <- gometh(sig.cpg = rownames(significant_CpGs),
+              all.cpg = rownames(DMPs),
+              collection = "KEGG")
+```
+```{r}
+KEGG <- topGSA(gst2.kegg, n=10)
+KEGG
+```
+
+```{r}
+write.csv(KEGG, file="KEGG_enrichemnt_160587_sig_Cpgs.csv")
+```
+
+```{r}
+# CpGs in Promoterregionen
+gst2.kegg.prom <- gometh(sig.cpg=rownames(significant_CpGs), all.cpg=rownames(DMPs), 
+                        collection="KEGG", genomic.features = c("TSS200",
+                                                                "TSS1500",
+                                                                "1stExon"))
+KEGG.promoter <- topGSA(gst2.kegg.prom, n=10)
+KEGG.promoter
+```
+
+```{r}
+write.csv(KEGG.promoter, file = "KEGG_enrichment_160587_sig_CpGs_in_promoter.csv")
+```
+
+```{r}
+# CpGs in gene bodies
+gst2.kegg.body <- gometh(sig.cpg=rownames(significant_CpGs), all.cpg=rownames(DMPs), 
+                        collection="KEGG", genomic.features = c("Body"))
+KEGG.gene.body <- topGSA(gst2.kegg.body, n=10)
+KEGG.gene.body
+```
+
+```{r}
+write.csv(KEGG.gene.body, file="KEGG_enrichment_160587_sig_CpGs_in_gene_body.csv")
+```
+
+```{r}
+hallmark <- readRDS(url("http://bioinf.wehi.edu.au/MSigDB/v7.1/Hs.h.all.v7.1.entrez.rds"))
+gsa <- gsameth(sig.cpg=rownames(significant_CpGs), all.cpg=rownames(DMPs), collection=hallmark)
+```
+```{r}
+Hallmarks <- topGSA(gsa, n=10)
+Hallmarks
+```
+```{r}
+library(ggplot2)
+library(dplyr)
+library(tibble)
+```
+
+```{r}
+
+data <- Hallmarks %>%
+  rownames_to_column(var = "HallmarkName")
+
+# Erster Plot (ähnlich zu Panel A)
+p1 <- ggplot(data, aes(x = DE, y = factor(HallmarkName, levels = rev(HallmarkName)), fill = FDR)) +
+  geom_bar(stat = "identity") +
+  scale_fill_gradient(low = "blue", high = "red", trans = "reverse") +
+  labs(x = "Number of genes", y = "", fill = "p.adjust") +
+  theme_minimal()
+print(p1)
+
+ggsave("Hallmarks_DMPs.pdf", plot=p1, width=8, height = 8)
+```
+
+
+```{r}
+write.csv(Hallmarks,file= "Hallmark_gene_set_enrichment_160587_sig_CpGs.csv")
+```
+# Gene Ontolgy for DMRs
+```{r}
+library(DMRcatedata)
+```
+
+
+```{r}
+gst.region <- goregion(results.ranges.sig,
+                      all.cpg=rownames(BRCA_methylation_data_original),
+                                       collection="GO",
+                                       array.type="450K")
+```
+```{r}
+OG_region <- topGSA(gst.region, n=10)
+OG_region
+```
+```{r}
+write.csv(OG_region, file = "GO_enrichment_DMRs.csv")
+```
+
+```{r}
+gst.region.kegg <- goregion(results.ranges.sig, all.cpg=rownames(BRCA_methylation_data_original), 
+                       collection="KEGG", array.type="450K")
+```
+
+```{r}
+KEGG_region <- topGSA(gst.region.kegg, n=10)
+KEGG_region
+```
+```{r}
+write.csv(KEGG_region, file = "KEGG_enrichment_DMRs.csv")
+```
+
+```{r}
+gsa.region <- gsaregion(results.ranges.sig, all.cpg=rownames(BRCA_methylation_data_original), 
+                        collection=hallmark)
+```
+```{r}
+Hallmark_region <- topGSA(gsa.region, n=10)
+Hallmark_region
+```
+
+```{r}
+write.csv(Hallmark_region, file = "Hallmark_gene_set_enrichment_DMRs.csv")
+```
+
+```{r}
+Intersect_Hallmarks <- intersect(rownames(Hallmark_region),rownames(Hallmarks))
+```
+
+```{r}
+write.csv(Intersect_Hallmarks, file="Intersect_between_Hallmarks_160587_sig_CpGs_and_DMRs.csv")
+```
+

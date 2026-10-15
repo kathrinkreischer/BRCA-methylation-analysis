@@ -1,0 +1,110 @@
+---
+title: "UMAP_2"
+author: "Irena Dikic"
+date: "2024-07-02"
+output: html_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+```{r}
+#laden der DMP csv Datei (CpG_overlap)
+wd <- getwd()
+data_path_2 <- paste0(dirname(wd), '/data/CpG_overlap.csv')
+Top_ranking_CpGs <- read.csv(data_path_2)
+```
+
+```{r}
+print(Top_ranking_CpGs)
+```
+
+
+```{r}
+wd <- getwd()
+data_path <- paste0(dirname(wd), '/data/BRCA_methylation_data.csv')
+BRCA_methylation_data_original <- read.csv(data_path, row.names=1)
+```
+
+```{r}
+print(BRCA_methylation_data_original)
+```
+
+```{r}
+library(ggplot2)
+library(umap)
+```
+
+```{r}
+umap_results <- umap(BRCA_methylation_data_original, n_components = 2, n_neighbors = 15)
+```
+
+```{r}
+# Convert umap_results to data frame
+# Assuming umap_results is already computed as a numeric matrix
+# Convert umap_results to a data frame (if not already)
+umap_df <- as.data.frame(umap_results)
+colnames(umap_df) <- c("UMAP1", "UMAP2")  # Rename columns if necessary
+
+# Add row names as a new column named 'CpG'
+umap_df$CpG <- rownames(umap_df)
+
+# Load ggplot2 library if not already loaded
+library(ggplot2)
+
+# Create ggplot visualization
+ggplot(umap_df, aes(x = UMAP1, y = UMAP2)) +
+  geom_point(size = 2) +
+  labs(title = "UMAP Visualization of BRCA Methylation Data",
+       x = "UMAP1", y = "UMAP2") +
+  theme_minimal()
+ggsave("UMAP.pdf")
+```
+
+```{r}
+umap_df$TopRanking <- ifelse(umap_df$CpG %in% Top_ranking_CpGs$Name, "Significant CpG", "Non significant CpG")
+
+# Load ggplot2 library if not already loaded
+library(ggplot2)
+
+# Create ggplot visualization with color differentiation
+ggplot(umap_df, aes(x = UMAP1, y = UMAP2, color = TopRanking)) +
+  geom_point(size = 0.5) +
+  labs(x = "UMAP1", y = "UMAP2", color = "CpG Significance") +
+  scale_color_manual(values = c("Significant CpG" = "maroon", "Non significant CpG" = "black")) +
+  theme_minimal() +
+    theme(legend.text = element_text(size = 7), 
+        legend.title = element_text(size = 8))
+ggsave("UMAP_2.pdf")
+```
+
+methylation_Top_ranking_CpGs UMAP
+```{r}
+methylation_Top_ranking_CpGs <- BRCA_methylation_data_original[Top_ranking_CpGs$Name, ]
+
+print(methylation_Top_ranking_CpGs)
+```
+
+```{r}
+umap_results <- umap(methylation_Top_ranking_CpGs, n_components = 2, n_neighbors = 15)
+```
+
+```{r}
+umap_df <- as.data.frame(umap_results)
+colnames(umap_df) <- c("UMAP1", "UMAP2")  # Rename columns if necessary
+
+# Add row names as a new column named 'CpG'
+umap_df$CpG <- rownames(umap_df)
+
+# Load ggplot2 library if not already loaded
+library(ggplot2)
+
+# Create ggplot visualization
+ggplot(umap_df, aes(x = UMAP1, y = UMAP2)) +
+  geom_point(size = 2) +
+  labs(title = "UMAP Visualization of BRCA Methylation Data",
+       x = "UMAP1", y = "UMAP2") +
+  theme_minimal()
+```
+

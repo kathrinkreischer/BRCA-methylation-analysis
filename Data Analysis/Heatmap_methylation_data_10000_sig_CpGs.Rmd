@@ -1,0 +1,65 @@
+---
+title: "Data Exploration for significant CpGs"
+output: pdf_document
+date: "2024-06-18"
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+# Heatmap
+```{r}
+wd <- getwd()
+data_path <- paste0(dirname(wd), '/data/BRCA_methylation_data.csv')
+BRCA_methylation_data_original <- read.csv(data_path, row.names=1)
+```
+
+```{r}
+wd <- getwd()
+data_path <- paste0(dirname(wd), '/data/BRCA_sample_sheet.csv')
+BRCA_sample_sheet <- read.csv(data_path, row.names=1)
+```
+
+```{r}
+wd <- getwd()
+data_path <- paste0(dirname(wd), '/data/DMPs_10.000.csv')
+DMPs_10.000 <- read.csv(data_path, row.names=1)
+```
+
+```{r}
+# Subset der BRCA Methylierungsdaten
+BRCA_data_DMP_10000 <- BRCA_methylation_data_original[rownames(BRCA_methylation_data_original)%in%rownames(DMPs_10.000),]
+```
+
+```{r}
+#identische Bennung der Patient-ID  Bindestrich
+colnames(BRCA_data_DMP_10000) <- gsub("\\.", "-", colnames(BRCA_data_DMP_10000))
+```
+
+```{r}
+#Subset des Annotation Dataframes mit dem Type
+#drop=FALSE behält die Dimensionen
+tissue_types <- BRCA_sample_sheet[,7, drop=FALSE]
+```
+
+
+```{r}
+#Library pheatmap laden und brewer.pal
+library(pheatmap)
+library(RColorBrewer)
+
+#Farbgebung für tumour tissue rot und für solid tissue blau
+annotation_color <- list(Type=c(`Primary solid Tumor`='red', `Solid Tissue Normal` = 'blue'))
+
+pdf("Heatmap_methylation_data_10000_sig_CpGs.pdf")
+#Heatmap, geclustered mit complete linkage, Annotationen zum tissue Type
+heatmap_10000_sigCpGs <- pheatmap(BRCA_data_DMP_10000, 
+         show_rownames = FALSE, 
+         show_colnames = FALSE,
+         cluster_rows = FALSE,
+         annotation_col = tissue_types, 
+         annotation_colors=annotation_color,
+         color=colorRampPalette(brewer.pal(n = 7, name ="Greens"))(100))
+dev.off()
+print(heatmap_10000_sigCpGs)
+```

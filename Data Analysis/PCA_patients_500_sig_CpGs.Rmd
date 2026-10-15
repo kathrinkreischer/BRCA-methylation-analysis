@@ -1,0 +1,70 @@
+---
+title: "Untitled"
+output: pdf_document
+date: "2024-07-08"
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+```{r}
+wd <- getwd()
+data_path <- paste0(dirname(wd), '/data/BRCA_methylation_data.csv')
+BRCA_methylation_data_original <- read.csv(data_path, row.names=1)
+```
+
+```{r}
+wd <- getwd()
+data_path <- paste0(dirname(wd), '/data/BRCA_sample_sheet.csv')
+BRCA_sample_sheet <- read.csv(data_path, row.names=1)
+```
+
+
+```{r}
+wd <- getwd()
+data_path <- paste0(dirname(wd), '/data/DMPs_10.000.csv')
+DMPs_10.000 <- read.csv(data_path, row.names=1)
+```
+
+# PCA
+```{r}
+# subsetting DMPs_10.000 in die ersten 1000
+DMPs_1000 <- DMPs_10.000[1:1000,]
+```
+
+```{r}
+# Subset der BRCA Methylierungsdaten
+BRCA_data_DMP_1000 <- BRCA_methylation_data_original[rownames(BRCA_methylation_data_original)%in%rownames(DMPs_1000),]
+```
+
+```{r}
+#Subset des Annotation Dataframes mit dem Type
+#drop=FALSE behält die Dimensionen
+tissue_types <- BRCA_sample_sheet[,7, drop=FALSE]
+```
+
+## PCA der Patienten
+```{r}
+pca_patients_1000_sigCpGs <- prcomp(t(BRCA_data_DMP_1000))
+```
+
+```{r}
+BRCA_sample_sheet$Type <- as.factor(BRCA_sample_sheet$Type)
+unique_types <- unique(BRCA_sample_sheet$Type)
+colors = c('red','blue') #Farben auswählen
+ts = color[BRCA_sample_sheet$Type] #Farben den Klassifizierungen zuordnen
+```
+
+```{r}
+pdf("PCA_patients_1000_sig_Cpgs.pdf")
+plot(pca_patients_1000_sigCpGs$x[,1],
+    pca_patients_1000_sigCpGs$x[,2],
+    xlab='PC1',
+    ylab='PC2',
+    col= ts,
+    pch=19)
+legend("bottomleft", legend = unique_types, pch = 19, col=colors)
+dev.off()
+
+```

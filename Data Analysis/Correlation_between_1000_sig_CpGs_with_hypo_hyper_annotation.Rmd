@@ -1,0 +1,110 @@
+---
+title: "Data Exploration/Antonia"
+author: "Antonia Eisenhofer"
+date: "2024-06-24"
+output: html_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+```{r}
+wd <- getwd()
+data_path <- paste0(dirname(wd), '/data/BRCA_methylation_data.csv')
+BRCA_methylation_data_original <- read.csv(data_path, row.names=1)
+```
+
+```{r}
+wd <- getwd()
+data_path <- paste0(dirname(wd), '/data/BRCA_sample_sheet.csv')
+BRCA_sample_sheet <- read.csv(data_path, row.names=1)
+```
+
+```{r}
+wd <- getwd()
+data_path <- paste0(dirname(wd), '/data/DMPs_10.000.csv')
+DMPs_10.000 <- read.csv(data_path, row.names=1)
+```
+
+Annotation mit Hypo Hyper für 10.000: 
+```{r}
+DMPs_10.000$'Hypomethylation/Hypermethylation' <-  ifelse(DMPs_10.000$logFC > 0, "Hypermethylation", "Hypomethylation")
+```
+
+
+Die ersten 1000 Methylierungsdaten aus dem original Datensatz heraus filtern:
+```{r}
+DMPs_1000 <- DMPs_10.000[1:1000,]
+```
+
+Annotation mit Hypo/Hyper für 1000: 
+```{r}
+DMPs_1000$'Hypomethylation/Hypermethylation' <-  ifelse(DMPs_1000$logFC > 0, "Hypermethylation", "Hypomethylation")
+```
+
+```{r}
+significant_cpg_ids_1.000 <- rownames(DMPs_1000)
+# Filtern und Sortieren der Zeilen in BRCA_methylation_original basierend auf den CpG-Ids in DMPS_10000
+BRCA_methylation_filtered_1.000 <- BRCA_methylation_data_original[significant_cpg_ids_1.000, ]
+
+# Sicherstellen, dass die Reihenfolge der CpGs der Reihenfolge in DMPS_10000 entspricht
+BRCA_methylation_filtered_1.000 <- BRCA_methylation_filtered_1.000[order(match(rownames(BRCA_methylation_filtered_1.000), significant_cpg_ids_1.000)), ]
+```
+
+```{r}
+#identische Bennung der Patient-ID  Bindestrich
+colnames(BRCA_methylation_filtered_1.000) <- gsub("\\.", "-", colnames(BRCA_methylation_filtered_1.000))
+```
+
+```{r}
+#Subset des Annotation Dataframes mit dem Type
+#drop=FALSE behält die Dimensionen
+tissue_types <- BRCA_sample_sheet[,7, drop=FALSE]
+```
+
+
+
+```{r}
+Hypo_hyper <- DMPs_1000[,40, drop=FALSE]
+```
+
+```{r}
+# Libraries laden
+library(pheatmap)
+library(RColorBrewer)
+
+annotation_color_1 <- list(tissue_types=c(`Hypermethylation`='chartreuse3', `Hypomethylation` = 'coral1'))
+
+# Pearson-Korrelation zwischen den CpGs ausrechnen
+CpG_cor_1.000 <- cor(t(BRCA_methylation_filtered_1.000))
+
+# PDF speichern
+pdf("Correlation_between_1000-sig_CpGs_with_hypo_hyper_annotation.pdf")
+
+# Heatmap der Korrelation, geclustered mit complete linkage, Annotationen zum tissue Type
+heatmap_cor_1.000_sigCpGs <- pheatmap(CpG_cor_1.000, 
+         show_rownames = FALSE, 
+         show_colnames = FALSE,
+         annotation_col = Hypo_hyper, 
+         annotation_row = Hypo_hyper,
+         annotation_colors = annotation_color_1,
+         annotation_legend = T,  # Legende entfernen
+         annotation_names_row = FALSE,
+         annotation_names_col = FALSE,
+         cellwidth = 0.18,
+         cellheight = 0.18,
+         color = colorRampPalette(c("maroon4", "white", "darkgreen"))(100))
+
+# PDF-Datei schließen
+dev.off()
+print(heatmap_cor_1.000_sigCpGs)
+
+```
+
+
+
+
+
+
+

@@ -1,0 +1,149 @@
+---
+title: "PCA for 1000 significant CpGs"
+author: "Antonia Eisenhofer"
+date: "2024-07-04"
+output: html_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+Loading the Data
+```{r}
+wd <- getwd()
+data_path <- paste0(dirname(wd), '/data/BRCA_methylation_data.csv')
+BRCA_methylation_data_original <- read.csv(data_path, row.names=1)
+```
+
+```{r}
+wd <- getwd()
+data_path <- paste0(dirname(wd), '/data/BRCA_sample_sheet.csv')
+BRCA_sample_sheet <- read.csv(data_path, row.names=1)
+```
+
+```{r}
+wd <- getwd()
+data_path <- paste0(dirname(wd), '/data/CpG_overlap.csv')
+overlap_cpg <- read.csv(data_path, row.names=NULL)
+```
+
+```{r}
+wd <- getwd()
+data_path <- paste0(dirname(wd), '/data/DMPs_10.000.csv')
+DMPs_10.000 <- read.csv(data_path, row.names=1)
+```
+
+```{r}
+sig_BRCA_methylation_data <- BRCA_methylation_data_original[rownames(BRCA_methylation_data_original)%in%rownames(overlap_cpg)]
+```
+
+
+```{r}
+# Subset der BRCA Methylierungsdaten
+BRCA_data_DMP_1000 <- BRCA_methylation_data_original[rownames(BRCA_methylation_data_original)%in%rownames(DMPs_1000),]
+```
+
+```{r}
+#Subset des Annotation Dataframes mit dem Type
+#drop=FALSE behält die Dimensionen
+tissue_types <- BRCA_sample_sheet[,7, drop=FALSE]
+```
+
+```{r}
+# Bestimmung von Hypermethylation oder Hypomethylation aus dem logFC
+overlap_cpg$'Hypomethylation/Hypermethylation' <- ifelse(overlap_cpg$logFC > 0, "Hypermethylation", "Hypomethylation")
+```
+
+```{r}
+# Extrahieren der CpG_Ids aus overlap_cpg
+significant_cpg_ids <- overlap_cpg$cpg_id
+
+# Filtern der Zeilen in BRCA_methylation_data_original basierend auf den CpG_Ids in overlap_cpg
+methylation_data_overlap <- BRCA_methylation_data_original[rownames(BRCA_methylation_data_original) %in% significant_cpg_ids, ]
+ 
+methylation_data_overlap_hypo_hyper <-methylation_data_overlap
+
+# Umwandeln der Zeilennamen in eine Spalte
+methylation_data_overlap_hypo_hyper$cpg_id <- rownames(methylation_data_overlap_hypo_hyper)
+
+# Zusammenführen der Hypo/Hyper-Informationen aus overlap_cpg zu methylation_data_overlap
+methylation_data_overlap_hypo_hyper <- merge(methylation_data_overlap_hypo_hyper, overlap_cpg[, c("cpg_id", 'Hypomethylation/Hypermethylation')], by = "cpg_id")
+
+# Zeilennamen wiederherstellen und cpg_id-Spalte entfernen
+rownames(methylation_data_overlap_hypo_hyper) <- methylation_data_overlap_hypo_hyper$cpg_id
+methylation_data_overlap_hypo_hyper$cpg_id <- NULL
+```
+
+
+
+Da wir nur die ersten 1000 CpGs ansehen, müssen wir methylation_data_overlap_hypo_hyper noch kürzen:
+```{r}
+methylation_data_overlap_hypo_hyper_1000 <- methylation_data_overlap_hypo_hyper[1:1000, ]
+```
+
+
+```{r}
+# Füge 'Hypomethylation/Hypermethylation' als Faktor hinzu
+methylation_data_overlap_hypo_hyper_1000$'Hypomethylation/Hypermethylation' <- factor(methylation_data_overlap_hypo_hyper_1000$'Hypomethylation/Hypermethylation', levels = c("Hypomethylation", "Hypermethylation"))
+```
+
+```{r}
+pca_1000_sigCpGs_Hypo_Hyper <- prcomp(BRCA_data_DMP_1000, scale. = TRUE)
+head(pca_1000_sigCpGs_Hypo_Hyper$x)
+```
+
+```{r}
+head(methylation_data_overlap_hypo_hyper_1000)#$'Hypomethylation/Hypermethylation'
+```
+
+```{r}
+cpgs_pca <- rownames(BRCA_data_DMP_1000)
+methylation_data_overlap_hypo_hyper_1000_sorted <- methylation_data_overlap_hypo_hyper[cpgs_pca,]
+```
+```{r}
+cpgs_pca[1:10]
+```
+
+```{r}
+rownames_pca <- rownames(BRCA_data_DMP_1000)
+```
+
+```{r}
+rownames_2 <- rownames(methylation_data_overlap_hypo_hyper)
+length(intersect(rownames_pca, rownames_2))
+```
+
+```{r}
+library(ggplot2)
+#install.packages("factoextra")
+library(factoextra)
+
+pca_1000_sigCpGs_Hypo_Hyper <- prcomp(BRCA_data_DMP_1000, scale. = TRUE)
+
+# Summary of the PCA results
+summary(pca_1000_sigCpGs_Hypo_Hyper)
+
+# Eigenvalues and Scree Plot
+fviz_eig(pca_1000_sigCpGs_Hypo_Hyper)
+
+# Converting Results into Dataframe
+PCA_CpG_dataframe_Hypo_Hyper <- as.data.frame(pca_1000_sigCpGs_Hypo_Hyper$x)
+
+custom_colors <- c("Hypomethylation" = "coral1", "Hypermethylation" = "chartreuse3")
+
+
+# Plotting the PCA Results in a Biplot mit Färbung nach 'Hypomethylation/Hypermethylation'
+p <- ggplot(PCA_CpG_dataframe_Hypo_Hyper, aes(x = PC1, y = PC2, color = methylation_data_overlap_hypo_hyper_1000_sorted$'Hypomethylation/Hypermethylation')) +
+  geom_point(size = 1) + 
+  labs(title = "PCA for CpG sites", x = "Principal Component 1", y = "Principal Component 2", color = NULL) +
+  coord_fixed(ratio = 1) +
+  theme_minimal() +
+  scale_color_manual(values = custom_colors)
+
+ggsave("PCA_1000_CpG_sites_colored.pdf", plot = p, width = 7, height = 7)
+p
+
+```
+
+

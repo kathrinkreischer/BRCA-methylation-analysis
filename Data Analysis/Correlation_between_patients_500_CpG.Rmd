@@ -1,0 +1,104 @@
+---
+title: "Correlation_between_Patients"
+author: "Antonia Eisenhofer"
+date: "2024-06-29"
+output: html_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+```{r}
+wd <- getwd()
+data_path <- paste0(dirname(wd), '/data/BRCA_methylation_data.csv')
+BRCA_methylation_data_original <- read.csv(data_path, row.names=1)
+```
+
+```{r}
+wd <- getwd()
+data_path <- paste0(dirname(wd), '/data/BRCA_sample_sheet.csv')
+BRCA_sample_sheet <- read.csv(data_path, row.names=1)
+```
+
+```{r}
+wd <- getwd()
+data_path <- paste0(dirname(wd), '/data/DMPs_10.000.csv')
+DMPs_10.000 <- read.csv(data_path, row.names=1)
+```
+
+```{r}
+#Subset des Annotation Dataframes mit dem Type
+#drop=FALSE behält die Dimensionen
+tissue_types <- BRCA_sample_sheet[,7, drop=FALSE]
+```
+
+Top 500 sifnifikante CpGs: 
+```{r}
+DMPs_500_cor <- DMPs_10.000[1:500,]
+```
+
+```{r}
+significant_cpg_ids_500_cor <- rownames(DMPs_500_cor)
+# Filtern und Sortieren der Zeilen in BRCA_methylation_original basierend auf den CpG-Ids in DMPS_10000
+BRCA_methylation_filtered_500_cor <- BRCA_methylation_data_original[significant_cpg_ids_500_cor, ]
+
+# Sicherstellen, dass die Reihenfolge der CpGs der Reihenfolge in DMPS_10000 entspricht
+BRCA_methylation_filtered_500_cor <- BRCA_methylation_filtered_500_cor[order(match(rownames(BRCA_methylation_filtered_500_cor), significant_cpg_ids_500_cor)), ]
+```
+
+```{r}
+#identische Bennung der Patient-ID  Bindestrich
+colnames(BRCA_methylation_filtered_500_cor) <- gsub("\\.", "-", colnames(BRCA_methylation_filtered_500_cor))
+```
+
+## Correlation between patients
+```{r}
+library(pheatmap)
+#Pearson-Korrelation zwischen den Patienten ausrechnen
+patient_cor_500_sigCpGs <- cor(BRCA_methylation_filtered_500_cor)
+
+#Farbgebung für tumour tissue rot und für solid tissue blau
+annotation_color <- list(Type=c(`Primary solid Tumor`='red', `Solid Tissue Normal` = 'blue'))
+
+# pdf erstellen 
+pdf("correlation_heatmap_pateints_500_sig_CpGs.pdf")
+
+#Heatmap der Korrelation, geclustered mit complete linkage, Annotationen zum tissue Type
+correlation_heatmap_patients_Top_500_CpG <- pheatmap(patient_cor_500_sigCpGs, 
+         show_rownames = FALSE, 
+         show_colnames = FALSE, 
+         cellheight = 3.7, 
+         cellwidth = 3.7,
+    
+         annotation_col = tissue_types, 
+         annotation_row = tissue_types, 
+         annotation_colors=annotation_color, 
+         color = colorRampPalette(c("maroon4", "white", "darkgreen"))(100))
+dev.off()
+print(correlation_heatmap_patients_Top_500_CpG)
+         
+```
+WER IST DER HERAUSSTECHENDE PATIENT?
+```{r}
+ #Diese Zeile extrahiert die Reihenfolge der Spalten, wie sie in der geclusterten Heatmap erscheinen
+col_order_cor <- correlation_heatmap_patients_Top_500_CpG$tree_col$order
+print(col_order_cor)
+
+# Diese Zeile sortiert die Typen (Tumor/Normal) entsprechend der geclusterten Reihenfolge
+annotated_types_ordered_cor <- tissue_types[col_order_cor, , drop=FALSE]
+print(annotated_types_ordered_cor)
+
+#Diese Zeile findet die Position(en) der Spalten, die als "Primary solid Tumor" markiert sind
+outlier_position_cor <- which(annotated_types_ordered_cor$Type == "Primary solid Tumor")
+
+# Zeige die Position des auffälligen Patienten an
+outlier_position_cor
+
+#Diese Zeile extrahiert die Informationen des speziellen Patienten aus dem BRCA_sample_sheet
+special_patient_cor <- BRCA_sample_sheet["TCGA-AO-A1KO-01A-31D-A13K-05", ] 
+special_patient_cor
+```
+
+
+
